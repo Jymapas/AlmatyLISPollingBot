@@ -56,3 +56,4 @@ nunit-*.xml
 # Local secrets
 secrets.env
 src/**/secrets.env
+.env
