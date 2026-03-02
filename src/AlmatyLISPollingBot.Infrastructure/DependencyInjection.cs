@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 
 namespace AlmatyLISPollingBot.Infrastructure;
 
@@ -21,7 +22,11 @@ public static class DependencyInjection
     {
         services.AddOptions<DatabaseConfiguration>()
             .Bind(configuration.GetSection(DatabaseConfiguration.SectionName))
-            .Validate(x => !string.IsNullOrWhiteSpace(x.ConnectionString), "Database connection string is required.")
+            .Validate(x => !string.IsNullOrWhiteSpace(x.Host), "Database host is required.")
+            .Validate(x => x.Port > 0, "Database port must be greater than zero.")
+            .Validate(x => !string.IsNullOrWhiteSpace(x.Name), "Database name is required.")
+            .Validate(x => !string.IsNullOrWhiteSpace(x.Username), "Database username is required.")
+            .Validate(x => !string.IsNullOrWhiteSpace(x.Password), "Database password is required.")
             .ValidateOnStart();
 
         services.AddOptions<ChgkApiConfiguration>()
@@ -29,10 +34,14 @@ public static class DependencyInjection
             .Validate(x => Uri.IsWellFormedUriString(x.BaseUrl, UriKind.Absolute), "Valid CHGK API base url is required.")
             .ValidateOnStart();
 
-        var connectionString = configuration.GetSection(DatabaseConfiguration.SectionName)["ConnectionString"]
-            ?? throw new InvalidOperationException("Database:ConnectionString configuration is required.");
-
-        services.AddDbContext<BotDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContext<BotDbContext>((serviceProvider, options) =>
+        {
+            var databaseConfiguration = serviceProvider
+                .GetRequiredService<IOptions<DatabaseConfiguration>>()
+                .Value;
+            var connectionString = PostgresConnectionStringFactory.Build(databaseConfiguration);
+            options.UseNpgsql(connectionString);
+        });
         services.AddScoped<IBotSettingsRepository, BotSettingsRepository>();
         services.AddScoped<IPollSessionRepository, PollSessionRepository>();
         services.AddScoped<IReadOnlyLookupRepository, LookupRepository>();
