@@ -58,6 +58,7 @@ Recommended commit types:
 - `test`
 - `docs`
 - `chore`
+- `ci`
 
 ## Safety Rules
 

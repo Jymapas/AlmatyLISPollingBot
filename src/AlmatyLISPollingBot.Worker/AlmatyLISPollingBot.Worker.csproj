@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <UserSecretsId>dotnet-AlmatyLISPollingBot.Worker-5128f729-c7a8-4efe-bcc7-cc49fa655d10</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DotNetEnv" Version="3.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="8.0.12" />
+    <PackageReference Include="Telegram.Bot" Version="22.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlmatyLISPollingBot.Application\AlmatyLISPollingBot.Application.csproj" />
+    <ProjectReference Include="..\AlmatyLISPollingBot.Infrastructure\AlmatyLISPollingBot.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
