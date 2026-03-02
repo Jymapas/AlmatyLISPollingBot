@@ -294,9 +294,16 @@
 Через `.env` или переменные окружения должны настраиваться минимум:
 
 - Telegram bot token
-- PostgreSQL connection string
+- PostgreSQL host
+- PostgreSQL port
+- PostgreSQL database name
+- PostgreSQL user
+- PostgreSQL password
 - application timezone
 - `main admin id`
+
+Строка подключения к PostgreSQL не должна передаваться одной переменной.
+Она должна собираться в коде приложения из отдельных конфигурационных значений.
 
 Допускается расширение списка конфигурации по мере проектирования каркаса.
 
