@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using AlmatyLISPollingBot.Application.Contracts.Tournaments;
 
 namespace AlmatyLISPollingBot.Infrastructure.Services.Chgk.Models;
@@ -10,6 +11,7 @@ internal sealed class TournamentDto
     public DateTimeOffset DateStart { get; init; }
     public DateTimeOffset DateEnd { get; init; }
     public decimal? DifficultyForecast { get; init; }
+    [JsonConverter(typeof(TournamentLanguageCollectionJsonConverter))]
     public IReadOnlyList<TournamentLanguageDto> Languages { get; init; } = Array.Empty<TournamentLanguageDto>();
     public IReadOnlyList<string> RatingSystems { get; init; } = Array.Empty<string>();
     public IReadOnlyList<TournamentPersonDto> Editors { get; init; } = Array.Empty<TournamentPersonDto>();
