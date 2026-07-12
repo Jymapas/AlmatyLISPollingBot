@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
@@ -78,7 +79,9 @@ public sealed class ChgkTournamentClient : IChgkTournamentClient
 
     private async Task<T?> GetAsync<T>(string route, CancellationToken cancellationToken)
     {
-        using var response = await httpClient.GetAsync(route, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, route);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/ld+json"));
+        using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new HttpRequestException(
