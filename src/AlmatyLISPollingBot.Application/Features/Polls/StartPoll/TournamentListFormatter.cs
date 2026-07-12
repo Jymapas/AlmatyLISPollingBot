@@ -34,13 +34,11 @@ public sealed class TournamentListFormatter
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var rateTasks = selectedCurrencies
-            .Select(async currency => new KeyValuePair<string, ExchangeRateQuote?>(
-                currency,
-                await exchangeRateProvider.GetKztRateAsync(currency, cancellationToken)))
-            .ToArray();
-        var rates = (await Task.WhenAll(rateTasks))
-            .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+        var rates = new Dictionary<string, ExchangeRateQuote?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var currency in selectedCurrencies)
+        {
+            rates[currency] = await exchangeRateProvider.GetKztRateAsync(currency, cancellationToken);
+        }
 
         var hasUnconvertedPrices = false;
         var entries = new List<string>(candidates.Count);

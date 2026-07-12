@@ -70,6 +70,25 @@ public sealed class TournamentListFormatterTests
         result.Pages[0].Should().NotContain("≈");
     }
 
+    [Fact]
+    public async Task FormatAsync_ShouldRequestExchangeRatesSequentially()
+    {
+        var provider = new SequentialRequestDetectingExchangeRateProvider();
+        var sut = new TournamentListFormatter(provider);
+        var candidates = new[]
+        {
+            CreateCandidate(paymentCategories: new[] { new TournamentPaymentCategory(900m, "RUB", "по умолчанию") }),
+            CreateCandidate(paymentCategories: new[] { new TournamentPaymentCategory(10m, "USD", "по умолчанию") })
+        };
+
+        var formattingTask = sut.FormatAsync(candidates, CancellationToken.None);
+        await provider.FirstRequestStarted;
+
+        provider.RequestCount.Should().Be(1);
+        provider.ReleaseFirstRequest();
+        await formattingTask;
+    }
+
     private static PollTournamentCandidate CreateCandidate(
         string title = "Турнир",
         IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null,
@@ -103,5 +122,28 @@ public sealed class TournamentListFormatterTests
             Quotes.TryGetValue(currencyCode, out var quote);
             return Task.FromResult(quote);
         }
+    }
+
+    private sealed class SequentialRequestDetectingExchangeRateProvider : IExchangeRateProvider
+    {
+        private readonly TaskCompletionSource firstRequestStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource releaseFirstRequest = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int RequestCount { get; private set; }
+        public Task FirstRequestStarted => firstRequestStarted.Task;
+
+        public async Task<ExchangeRateQuote?> GetKztRateAsync(string currencyCode, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            if (RequestCount == 1)
+            {
+                firstRequestStarted.SetResult();
+                await releaseFirstRequest.Task.WaitAsync(cancellationToken);
+            }
+
+            return null;
+        }
+
+        public void ReleaseFirstRequest() => releaseFirstRequest.SetResult();
     }
 }
