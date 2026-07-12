@@ -8,6 +8,7 @@ using AlmatyLISPollingBot.Infrastructure;
 using AlmatyLISPollingBot.Worker.Configuration;
 using AlmatyLISPollingBot.Worker.HostedServices;
 using AlmatyLISPollingBot.Worker.Telegram;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
 

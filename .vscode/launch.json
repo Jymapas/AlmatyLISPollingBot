@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AlmatyLISPollingBot.Worker (Local)",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/AlmatyLISPollingBot.Worker/bin/Debug/net8.0/AlmatyLISPollingBot.Worker.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/src/AlmatyLISPollingBot.Worker",
+      "stopAtEntry": false,
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "dotnet-build"
+    },
+    {
+      "name": "Attach to AlmatyLISPollingBot.Worker",
+      "type": "coreclr",
+      "request": "attach",
+      "processName": "AlmatyLISPollingBot.Worker"
+    }
+  ]
+}
