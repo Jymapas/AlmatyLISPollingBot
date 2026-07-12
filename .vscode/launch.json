@@ -10,7 +10,8 @@
       "cwd": "${workspaceFolder}/src/AlmatyLISPollingBot.Worker",
       "stopAtEntry": false,
       "env": {
-        "DOTNET_ENVIRONMENT": "Development"
+        "DOTNET_ENVIRONMENT": "Development",
+        "DATABASE__HOST": "localhost"
       },
       "console": "integratedTerminal",
       "justMyCode": true,

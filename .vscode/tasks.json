@@ -2,6 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "postgres-start",
+      "command": "source .env; source secrets.env; export TELEGRAM__BOTTOKEN DATABASE__HOST DATABASE__PORT DATABASE__NAME DATABASE__USERNAME DATABASE__PASSWORD BOT__APPLICATIONTIMEZONE BOT__MAINADMINUSERID BOT__TARGETCHATID BOT__DEFAULTPOLLSTOPTIME BOT__DEFAULTVENUE CHGKAPI__BASEURL POSTGRES_PASSWORD; docker compose up -d --wait postgres",
+      "type": "shell",
+      "problemMatcher": []
+    },
+    {
       "label": "dotnet-build",
       "command": "dotnet",
       "type": "process",
@@ -10,6 +16,8 @@
         "${workspaceFolder}/AlmatyLISPollingBot.sln"
       ],
       "problemMatcher": "$msCompile",
+      "dependsOn": "postgres-start",
+      "dependsOrder": "sequence",
       "group": {
         "kind": "build",
         "isDefault": true
