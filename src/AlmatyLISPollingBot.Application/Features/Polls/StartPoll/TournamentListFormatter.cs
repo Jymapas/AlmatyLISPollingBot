@@ -1,0 +1,274 @@
+using System.Globalization;
+using System.Net;
+using System.Text;
+using AlmatyLISPollingBot.Application.Abstractions.ExchangeRates;
+using AlmatyLISPollingBot.Application.Contracts.ExchangeRates;
+using AlmatyLISPollingBot.Application.Contracts.Tournaments;
+
+namespace AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
+
+public sealed class TournamentListFormatter
+{
+    private const int TelegramMessageLengthLimit = 4096;
+    private static readonly string[] NumberEmoji = { "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣" };
+    private static readonly string[] CurrencyPriority = { "KZT", "RUB", "USD" };
+
+    private readonly IExchangeRateProvider exchangeRateProvider;
+
+    public TournamentListFormatter(IExchangeRateProvider exchangeRateProvider)
+    {
+        this.exchangeRateProvider = exchangeRateProvider;
+    }
+
+    public async Task<TournamentListFormattingResult> FormatAsync(
+        IReadOnlyList<PollTournamentCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        var selectedCurrencies = candidates
+            .Select(x => SelectPaymentCategories(x.Tournament))
+            .Where(x => x.Count > 0)
+            .Select(x => x[0].Currency)
+            .Where(x => !string.Equals(x, "KZT", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var rateTasks = selectedCurrencies
+            .Select(async currency => new KeyValuePair<string, ExchangeRateQuote?>(
+                currency,
+                await exchangeRateProvider.GetKztRateAsync(currency, cancellationToken)))
+            .ToArray();
+        var rates = (await Task.WhenAll(rateTasks))
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+
+        var hasUnconvertedPrices = false;
+        var entries = new List<string>(candidates.Count);
+        for (var index = 0; index < candidates.Count; index++)
+        {
+            var candidate = candidates[index];
+            entries.Add(FormatCandidate(
+                candidate,
+                index,
+                SelectPaymentCategories(candidate.Tournament),
+                rates,
+                ref hasUnconvertedPrices));
+        }
+
+        return new TournamentListFormattingResult(Paginate(entries), hasUnconvertedPrices);
+    }
+
+    private static string FormatCandidate(
+        PollTournamentCandidate candidate,
+        int index,
+        IReadOnlyList<TournamentPaymentCategory> paymentCategories,
+        IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
+        ref bool hasUnconvertedPrices)
+    {
+        var tournament = candidate.Tournament;
+        var builder = new StringBuilder();
+        builder.Append(NumberEmoji[index]);
+        builder.Append(" <a href=\"https://rating.chgk.info/tournament/");
+        builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
+        builder.Append("\">");
+        builder.Append(Escape(tournament.Title));
+        builder.Append("</a>\n");
+        builder.Append("<b>Редакторы:</b> ");
+        builder.Append(Escape(FormatEditors(tournament.Editors)));
+        builder.Append("\n<b>Вопросы:</b> ");
+        builder.Append(tournament.QuestionCount == 0 ? "не указано" : tournament.QuestionCount.ToString(CultureInfo.InvariantCulture));
+        builder.Append("   <b>Сложность:</b> ");
+        builder.Append(tournament.DifficultyForecast?.ToString("0.##", CultureInfo.InvariantCulture) ?? "не указана");
+
+        if (paymentCategories.Count > 0)
+        {
+            builder.Append('\n');
+            builder.Append(FormatPaymentCategories(paymentCategories, rates, ref hasUnconvertedPrices));
+        }
+
+        if (candidate.IsAvailableAtFirstSlot && !candidate.IsAvailableAtSecondSlot)
+        {
+            builder.Append("\n❗️ <b>Только первым</b>");
+        }
+        else if (!candidate.IsAvailableAtFirstSlot && candidate.IsAvailableAtSecondSlot)
+        {
+            builder.Append("\n❗️ <b>Только вторым</b>");
+        }
+
+        return builder.ToString();
+    }
+
+    private static IReadOnlyList<TournamentPaymentCategory> SelectPaymentCategories(TournamentDetails tournament)
+    {
+        var groups = tournament.PaymentCategories
+            .Where(x => !string.IsNullOrWhiteSpace(x.Currency))
+            .GroupBy(x => x.Currency.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var currencyCode in CurrencyPriority)
+        {
+            var preferredGroup = groups.FirstOrDefault(x => string.Equals(x.Key, currencyCode, StringComparison.OrdinalIgnoreCase));
+            if (preferredGroup is not null)
+            {
+                return preferredGroup.ToArray();
+            }
+        }
+
+        return groups.FirstOrDefault()?.ToArray() ?? Array.Empty<TournamentPaymentCategory>();
+    }
+
+    private static string FormatPaymentCategories(
+        IReadOnlyList<TournamentPaymentCategory> paymentCategories,
+        IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
+        ref bool hasUnconvertedPrices)
+    {
+        var builder = new StringBuilder();
+        for (var index = 0; index < paymentCategories.Count; index++)
+        {
+            var category = paymentCategories[index];
+            var price = FormatPrice(category, rates, ref hasUnconvertedPrices);
+            var label = FormatCategoryLabel(category, index == 0);
+
+            if (index == 0)
+            {
+                builder.Append("<b>Стоимость:</b> ");
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    builder.Append(Escape(label));
+                    builder.Append(" — ");
+                }
+            }
+            else
+            {
+                builder.Append(Escape(label));
+                builder.Append(" — ");
+            }
+
+            builder.Append(price);
+            if (index < paymentCategories.Count - 1)
+            {
+                builder.Append('\n');
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatPrice(
+        TournamentPaymentCategory category,
+        IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
+        ref bool hasUnconvertedPrices)
+    {
+        var currency = category.Currency.Trim().ToUpperInvariant();
+        var sourceAmount = string.Concat(
+            category.Amount.ToString("0.##", CultureInfo.InvariantCulture),
+            GetCurrencySuffix(currency));
+
+        if (string.Equals(currency, "KZT", StringComparison.Ordinal))
+        {
+            return sourceAmount;
+        }
+
+        if (!rates.TryGetValue(currency, out var rate) || rate is null)
+        {
+            hasUnconvertedPrices = true;
+            return sourceAmount;
+        }
+
+        return string.Concat(
+            sourceAmount,
+            " (≈",
+            rate.ConvertToTenge(category.Amount).ToString("0", CultureInfo.InvariantCulture),
+            "₸)");
+    }
+
+    private static string FormatCategoryLabel(TournamentPaymentCategory category, bool isFirstCategory)
+    {
+        if (string.IsNullOrWhiteSpace(category.Reason)
+            || string.Equals(category.Reason, "по умолчанию", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        return category.Reason;
+    }
+
+    private static string FormatEditors(IReadOnlyList<TournamentEditor> editors)
+    {
+        var names = editors
+            .Select(x => x.DisplayName)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+
+        return names.Length == 0 ? "не указаны" : string.Join(", ", names);
+    }
+
+    private static IReadOnlyList<string> Paginate(IReadOnlyList<string> entries)
+    {
+        var pages = new List<string>();
+        var currentPage = new StringBuilder();
+
+        foreach (var entry in entries)
+        {
+            var separatorLength = currentPage.Length == 0 ? 0 : 2;
+            if (currentPage.Length > 0 && currentPage.Length + separatorLength + entry.Length > TelegramMessageLengthLimit)
+            {
+                pages.Add(currentPage.ToString());
+                currentPage.Clear();
+            }
+
+            if (entry.Length > TelegramMessageLengthLimit)
+            {
+                foreach (var part in SplitLongEntry(entry))
+                {
+                    if (currentPage.Length > 0)
+                    {
+                        pages.Add(currentPage.ToString());
+                        currentPage.Clear();
+                    }
+
+                    pages.Add(part);
+                }
+
+                continue;
+            }
+
+            if (currentPage.Length > 0)
+            {
+                currentPage.Append("\n\n");
+            }
+
+            currentPage.Append(entry);
+        }
+
+        if (currentPage.Length > 0)
+        {
+            pages.Add(currentPage.ToString());
+        }
+
+        return pages;
+    }
+
+    private static IEnumerable<string> SplitLongEntry(string entry)
+    {
+        for (var start = 0; start < entry.Length; start += TelegramMessageLengthLimit)
+        {
+            var length = Math.Min(TelegramMessageLengthLimit, entry.Length - start);
+            yield return entry.Substring(start, length);
+        }
+    }
+
+    private static string GetCurrencySuffix(string currencyCode)
+    {
+        return currencyCode switch
+        {
+            "KZT" => "₸",
+            "RUB" => "₽",
+            "USD" => "$",
+            "EUR" => "€",
+            _ => string.Concat(' ', currencyCode)
+        };
+    }
+
+    private static string Escape(string value) => WebUtility.HtmlEncode(value);
+}
