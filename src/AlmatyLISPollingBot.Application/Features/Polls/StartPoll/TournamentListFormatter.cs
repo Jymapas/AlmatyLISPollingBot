@@ -29,7 +29,7 @@ public sealed class TournamentListFormatter
         var selectedCurrencies = candidates
             .Select(x => SelectPaymentCategories(x.Tournament))
             .Where(x => x.Count > 0)
-            .Select(x => x[0].Currency)
+            .Select(x => x[0].Currency.Trim().ToUpperInvariant())
             .Where(x => !string.Equals(x, "KZT", StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();

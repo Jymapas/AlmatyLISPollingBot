@@ -1,4 +1,5 @@
 using AlmatyLISPollingBot.Application.Abstractions.Clock;
+using AlmatyLISPollingBot.Application.Abstractions.Messaging;
 using AlmatyLISPollingBot.Application.Abstractions.Persistence;
 using AlmatyLISPollingBot.Domain.Enums;
 
@@ -8,11 +9,16 @@ public sealed class StopPollService
 {
     private readonly IClock clock;
     private readonly IPollSessionRepository pollSessionRepository;
+    private readonly IPollPublisher pollPublisher;
 
-    public StopPollService(IClock clock, IPollSessionRepository pollSessionRepository)
+    public StopPollService(
+        IClock clock,
+        IPollSessionRepository pollSessionRepository,
+        IPollPublisher pollPublisher)
     {
         this.clock = clock;
         this.pollSessionRepository = pollSessionRepository;
+        this.pollPublisher = pollPublisher;
     }
 
     public async Task<bool> StopActivePollAsync(CancellationToken cancellationToken)
@@ -21,6 +27,11 @@ public sealed class StopPollService
         if (activePoll is null)
         {
             return false;
+        }
+
+        if (activePoll.PollMessageId is not null)
+        {
+            await pollPublisher.StopPollAsync(activePoll.ChatId, activePoll.PollMessageId.Value, cancellationToken);
         }
 
         activePoll.Status = PollLifecycleStatus.Stopped;

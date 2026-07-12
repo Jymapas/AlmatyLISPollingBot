@@ -1,12 +1,11 @@
 using AlmatyLISPollingBot.Application.Abstractions.Clock;
+using AlmatyLISPollingBot.Application.Abstractions.Administrators;
 using AlmatyLISPollingBot.Application.Abstractions.ExchangeRates;
 using AlmatyLISPollingBot.Application.Abstractions.Persistence;
-using AlmatyLISPollingBot.Application.Abstractions.Scheduling;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Infrastructure.Persistence;
 using AlmatyLISPollingBot.Infrastructure.Persistence.Repositories;
-using AlmatyLISPollingBot.Infrastructure.Scheduling;
 using AlmatyLISPollingBot.Infrastructure.Services;
 using AlmatyLISPollingBot.Infrastructure.Services.ExchangeRates;
 using Microsoft.EntityFrameworkCore;
@@ -52,10 +51,10 @@ public static class DependencyInjection
         services.AddScoped<IBotSettingsRepository, BotSettingsRepository>();
         services.AddScoped<IPollSessionRepository, PollSessionRepository>();
         services.AddScoped<IReadOnlyLookupRepository, LookupRepository>();
+        services.AddScoped<IChatAdministratorRepository, ChatAdministratorRepository>();
         services.AddScoped<ICurrencyExchangeRateRepository, CurrencyExchangeRateRepository>();
 
         services.AddSingleton<IClock, SystemClock>();
-        services.AddSingleton<IBackgroundJobScheduler, NoOpBackgroundJobScheduler>();
 
         services.AddHttpClient<IChgkTournamentClient, ChgkTournamentClient>((serviceProvider, client) =>
             {

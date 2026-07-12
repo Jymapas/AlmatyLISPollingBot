@@ -1,25 +1,72 @@
-using AlmatyLISPollingBot.Application.Abstractions.Scheduling;
+using AlmatyLISPollingBot.Application.Abstractions.Clock;
+using AlmatyLISPollingBot.Application.Contracts.Bot;
+using AlmatyLISPollingBot.Application.Features.Administrators;
+using AlmatyLISPollingBot.Domain.Common;
+using Microsoft.Extensions.Options;
 
 namespace AlmatyLISPollingBot.Worker.HostedServices;
 
-public sealed class AdminSyncSchedulerService : IHostedService
+public sealed class AdminSyncSchedulerService : BackgroundService
 {
-    private readonly IBackgroundJobScheduler backgroundJobScheduler;
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly IOptions<BotConfiguration> botConfiguration;
+    private readonly IClock clock;
     private readonly ILogger<AdminSyncSchedulerService> logger;
 
     public AdminSyncSchedulerService(
-        IBackgroundJobScheduler backgroundJobScheduler,
+        IServiceScopeFactory scopeFactory,
+        IOptions<BotConfiguration> botConfiguration,
+        IClock clock,
         ILogger<AdminSyncSchedulerService> logger)
     {
-        this.backgroundJobScheduler = backgroundJobScheduler;
+        this.scopeFactory = scopeFactory;
+        this.botConfiguration = botConfiguration;
+        this.clock = clock;
         this.logger = logger;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await backgroundJobScheduler.ScheduleAdminSyncAsync(cancellationToken);
-        logger.LogInformation("Admin sync scheduler initialized.");
+        await SynchronizeSafelyAsync(stoppingToken);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(GetDelayUntilNextRun(clock.UtcNow), stoppingToken);
+            await SynchronizeSafelyAsync(stoppingToken);
+        }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    private async Task SynchronizeSafelyAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var adminSyncService = scope.ServiceProvider.GetRequiredService<AdminSyncService>();
+            await adminSyncService.SynchronizeAsync(botConfiguration.Value.TargetChatId, cancellationToken);
+            logger.LogInformation("Chat administrator cache synchronized.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Failed to synchronize chat administrator cache.");
+        }
+    }
+
+    private static TimeSpan GetDelayUntilNextRun(DateTimeOffset utcNow)
+    {
+        var localNow = utcNow.ToOffset(PollRules.SlotUtcOffset);
+        var nextRun = new DateTimeOffset(
+            localNow.Year,
+            localNow.Month,
+            localNow.Day,
+            6,
+            0,
+            0,
+            PollRules.SlotUtcOffset);
+        if (nextRun <= localNow)
+        {
+            nextRun = nextRun.AddDays(1);
+        }
+
+        return nextRun - localNow;
+    }
 }

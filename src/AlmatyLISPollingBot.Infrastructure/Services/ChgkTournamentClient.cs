@@ -92,11 +92,19 @@ public sealed class ChgkTournamentClient : IChgkTournamentClient
 
     private static string? GetSafeRelativeRoute(string? route)
     {
-        if (string.IsNullOrWhiteSpace(route) || Uri.TryCreate(route, UriKind.Absolute, out _))
+        if (string.IsNullOrWhiteSpace(route))
         {
             return null;
         }
 
-        return route.TrimStart('/');
+        var trimmedRoute = route.Trim();
+        if (!trimmedRoute.StartsWith("/", StringComparison.Ordinal)
+            || trimmedRoute.StartsWith("//", StringComparison.Ordinal)
+            || trimmedRoute.IndexOfAny(new[] { '\r', '\n', '\\' }) >= 0)
+        {
+            return null;
+        }
+
+        return trimmedRoute.TrimStart('/');
     }
 }

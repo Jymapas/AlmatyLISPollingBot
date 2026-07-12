@@ -1,5 +1,6 @@
 using AlmatyLISPollingBot.Application;
 using AlmatyLISPollingBot.Application.Abstractions.Messaging;
+using AlmatyLISPollingBot.Application.Abstractions.Administrators;
 using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Application.Features.MakePost;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
@@ -25,6 +26,10 @@ builder.Services.AddOptions<TelegramBotConfiguration>()
 
 builder.Services.AddOptions<BotConfiguration>()
     .Bind(builder.Configuration.GetSection(BotConfiguration.SectionName))
+    .Validate(x => x.TargetChatId != 0, "Target chat id is required.")
+    .Validate(x => x.MainAdminUserId > 0, "Main admin user id is required.")
+    .Validate(x => TimeZoneInfo.TryFindSystemTimeZoneById(x.ApplicationTimeZone, out _), "Valid application time zone is required.")
+    .Validate(x => x.DefaultPollStopTime >= TimeSpan.Zero && x.DefaultPollStopTime < TimeSpan.FromDays(1), "Poll stop time must be within a day.")
     .ValidateOnStart();
 
 builder.Services.AddSingleton<ITelegramBotClient>(serviceProvider =>
@@ -38,7 +43,10 @@ builder.Services.AddScoped<StopPollService>();
 builder.Services.AddScoped<MakePostService>();
 builder.Services.AddScoped<TelegramUpdateRouter>();
 builder.Services.AddScoped<IChatBotClient, TelegramMainAdminClient>();
+builder.Services.AddScoped<IPollPublisher, TelegramPollPublisher>();
+builder.Services.AddScoped<IChatAdministratorClient, TelegramChatAdministratorClient>();
 
+builder.Services.AddHostedService<BotSettingsInitializationService>();
 builder.Services.AddHostedService<AdminSyncSchedulerService>();
 builder.Services.AddHostedService<TelegramLongPollingService>();
 
