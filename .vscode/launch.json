@@ -11,7 +11,8 @@
       "stopAtEntry": false,
       "env": {
         "DOTNET_ENVIRONMENT": "Development",
-        "DATABASE__HOST": "localhost"
+        "DATABASE__HOST": "localhost",
+        "DATABASE__PORT": "5433"
       },
       "console": "integratedTerminal",
       "justMyCode": true,

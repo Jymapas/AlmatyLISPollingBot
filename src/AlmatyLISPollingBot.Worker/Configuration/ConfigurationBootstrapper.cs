@@ -7,9 +7,9 @@ public static class ConfigurationBootstrapper
 {
     public static void ConfigureAppConfiguration(ConfigurationManager configuration)
     {
-        Env.TraversePath().Load();
+        Env.NoClobber().TraversePath().Load();
         var secretsPath = FindRequiredSecretsEnv();
-        Env.Load(secretsPath);
+        Env.NoClobber().Load(secretsPath);
 
         configuration
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
