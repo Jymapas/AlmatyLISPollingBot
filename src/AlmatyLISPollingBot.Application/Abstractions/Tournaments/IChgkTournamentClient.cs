@@ -4,11 +4,11 @@ namespace AlmatyLISPollingBot.Application.Abstractions.Tournaments;
 
 public interface IChgkTournamentClient
 {
-    Task<IReadOnlyCollection<TournamentSummary>> GetTournamentsByDateAsync(
+    Task<IReadOnlyCollection<TournamentDetails>> GetTournamentsIntersectingDateAsync(
         DateOnly targetDate,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyCollection<TournamentSummary>> GetTournamentsByIdsAsync(
+    Task<IReadOnlyCollection<TournamentDetails>> GetTournamentsByIdsAsync(
         IReadOnlyCollection<int> tournamentIds,
         CancellationToken cancellationToken);
 }

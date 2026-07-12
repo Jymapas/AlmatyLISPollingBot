@@ -6,6 +6,9 @@ public static class PollRules
     public const int ResultOptionSlots = 1;
     public const int MaxTournamentOptions = MaxPollOptions - ResultOptionSlots;
     public const string ResultsOptionTitle = "посмотреть результаты";
+    public static readonly TimeSpan SlotUtcOffset = TimeSpan.FromHours(5);
+    public static readonly TimeOnly FirstSlotTime = new(13, 0);
+    public static readonly TimeOnly SecondSlotTime = new(15, 30);
 
     private static readonly HashSet<int> SupportedTournamentTypesInternal = new()
     {
@@ -20,11 +23,16 @@ public static class PollRules
         return SupportedTournamentTypesInternal.Contains(tournamentType);
     }
 
-    public static bool FitsTargetSaturdayWindow(
-        DateOnly localStartDate,
-        DateOnly localEndDate,
-        DateOnly targetDate)
+    public static DateTimeOffset GetSlotStart(DateOnly targetDate, TimeOnly slotTime)
     {
-        return localStartDate == targetDate && localEndDate == targetDate;
+        return new DateTimeOffset(targetDate.ToDateTime(slotTime), SlotUtcOffset);
+    }
+
+    public static bool IsAvailableAtSlot(
+        DateTimeOffset tournamentStart,
+        DateTimeOffset tournamentEnd,
+        DateTimeOffset slotStart)
+    {
+        return tournamentStart <= slotStart && slotStart <= tournamentEnd;
     }
 }

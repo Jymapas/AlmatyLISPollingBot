@@ -6,44 +6,43 @@ namespace AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 public sealed class PollCandidateSelectionService
 {
     public IReadOnlyList<PollTournamentCandidate> SelectCandidates(
-        IEnumerable<TournamentSummary> tournaments,
+        IEnumerable<TournamentDetails> tournaments,
         DateOnly targetDate,
-        TimeZoneInfo timeZone,
         IReadOnlyCollection<int>? excludedTournamentIds = null)
     {
         ArgumentNullException.ThrowIfNull(tournaments);
-        ArgumentNullException.ThrowIfNull(timeZone);
 
         var excludedIds = excludedTournamentIds is null
             ? new HashSet<int>()
             : new HashSet<int>(excludedTournamentIds);
+        var firstSlot = PollRules.GetSlotStart(targetDate, PollRules.FirstSlotTime);
+        var secondSlot = PollRules.GetSlotStart(targetDate, PollRules.SecondSlotTime);
 
         return tournaments
-            .Where(x => PollRules.IsSupportedTournamentType(x.Type))
+            .Where(x => PollRules.IsSupportedTournamentType(x.TypeId))
             .Where(x => x.HasRussianLanguage)
-            .Where(x => x.GgRating)
+            .Where(x => x.HasChgkGgRating)
             .Where(x => !excludedIds.Contains(x.Id))
-            .Where(x => FitsTargetSaturdayWindow(x, targetDate, timeZone))
-            .OrderByDescending(x => x.DifficultyForecast ?? decimal.MinValue)
-            .ThenBy(x => x.Title, StringComparer.Ordinal)
-            .ThenBy(x => x.Id)
+            .Select(x => new CandidateAvailability(
+                x,
+                PollRules.IsAvailableAtSlot(x.DateStart, x.DateEnd, firstSlot),
+                PollRules.IsAvailableAtSlot(x.DateStart, x.DateEnd, secondSlot)))
+            .Where(x => x.IsAvailableAtFirstSlot || x.IsAvailableAtSecondSlot)
+            .OrderByDescending(x => x.Tournament.DifficultyForecast.HasValue)
+            .ThenByDescending(x => x.Tournament.DifficultyForecast)
+            .ThenBy(x => x.Tournament.Title, StringComparer.Ordinal)
+            .ThenBy(x => x.Tournament.Id)
             .Take(PollRules.MaxTournamentOptions)
             .Select(static (x, index) => new PollTournamentCandidate(
-                x.Id,
-                x.Title,
-                x.DifficultyForecast,
+                x.Tournament,
+                x.IsAvailableAtFirstSlot,
+                x.IsAvailableAtSecondSlot,
                 index))
             .ToArray();
     }
 
-    private static bool FitsTargetSaturdayWindow(
-        TournamentSummary tournament,
-        DateOnly targetDate,
-        TimeZoneInfo timeZone)
-    {
-        var localStartDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(tournament.DateStart, timeZone).Date);
-        var localEndDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(tournament.DateEnd, timeZone).Date);
-
-        return PollRules.FitsTargetSaturdayWindow(localStartDate, localEndDate, targetDate);
-    }
+    private sealed record CandidateAvailability(
+        TournamentDetails Tournament,
+        bool IsAvailableAtFirstSlot,
+        bool IsAvailableAtSecondSlot);
 }

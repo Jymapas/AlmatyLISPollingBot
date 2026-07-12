@@ -23,21 +23,11 @@ public sealed class PollRulesTests
         result.Should().Be(expected);
     }
 
-    [Theory]
-    [InlineData("2026-03-07", "2026-03-07", "2026-03-07", true)]
-    [InlineData("2026-03-07", "2026-03-08", "2026-03-07", false)]
-    [InlineData("2026-03-06", "2026-03-07", "2026-03-07", false)]
-    public void FitsTargetSaturdayWindow_ShouldRequireLocalStartAndEndOnTargetDate(
-        string localStartDate,
-        string localEndDate,
-        string targetDate,
-        bool expected)
+    [Fact]
+    public void IsAvailableAtSlot_ShouldIncludeTournamentBoundaries()
     {
-        var result = PollRules.FitsTargetSaturdayWindow(
-            DateOnly.Parse(localStartDate),
-            DateOnly.Parse(localEndDate),
-            DateOnly.Parse(targetDate));
+        var slot = PollRules.GetSlotStart(new DateOnly(2026, 3, 7), PollRules.FirstSlotTime);
 
-        result.Should().Be(expected);
+        PollRules.IsAvailableAtSlot(slot, slot, slot).Should().BeTrue();
     }
 }
