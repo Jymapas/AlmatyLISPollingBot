@@ -72,9 +72,7 @@ public sealed class StartPollService
         }
 
         var formattingResult = await tournamentListFormatter.FormatAsync(candidates, cancellationToken);
-        var stopAtUtc = new DateTimeOffset(
-            targetDate.ToDateTime(settings.DefaultPollStopTime),
-            PollRules.SlotUtcOffset).ToUniversalTime();
+        var stopAtUtc = PollRules.GetPollStopAt(targetDate, settings.DefaultPollStopTime).ToUniversalTime();
         var publicationRequest = CreatePublicationRequest(settings.TargetChatId, targetDate, candidates, stopAtUtc);
         var listMessageIds = new List<int>(formattingResult.Pages.Count);
         PublishedPoll? publishedPoll = null;

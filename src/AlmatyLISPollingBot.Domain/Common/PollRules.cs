@@ -5,6 +5,7 @@ public static class PollRules
     public const int MaxPollOptions = 10;
     public const int ResultOptionSlots = 1;
     public const int MaxTournamentOptions = MaxPollOptions - ResultOptionSlots;
+    public const int PollStopDaysBeforeTargetDate = 2;
     public const string ResultsOptionTitle = "посмотреть результаты";
     public static readonly TimeSpan SlotUtcOffset = TimeSpan.FromHours(5);
     public static readonly TimeOnly FirstSlotTime = new(13, 0);
@@ -26,6 +27,12 @@ public static class PollRules
     public static DateTimeOffset GetSlotStart(DateOnly targetDate, TimeOnly slotTime)
     {
         return new DateTimeOffset(targetDate.ToDateTime(slotTime), SlotUtcOffset);
+    }
+
+    public static DateTimeOffset GetPollStopAt(DateOnly targetDate, TimeOnly stopTime)
+    {
+        var stopDate = targetDate.AddDays(-PollStopDaysBeforeTargetDate);
+        return new DateTimeOffset(stopDate.ToDateTime(stopTime), SlotUtcOffset);
     }
 
     public static bool IsAvailableAtSlot(
