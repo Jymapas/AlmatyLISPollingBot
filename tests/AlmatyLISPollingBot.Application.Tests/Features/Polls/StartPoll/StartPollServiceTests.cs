@@ -33,6 +33,7 @@ public sealed class StartPollServiceTests
         fixture.PollPublisher.HtmlMessages.Should().ContainSingle();
         fixture.PollPublisher.PollRequests.Should().ContainSingle();
         var request = fixture.PollPublisher.PollRequests[0];
+        request.Question.Should().Be("Выбираем 2 синхрона на субботу, 07.03.2026:");
         request.Options.Should().Equal("Синхрон", "посмотреть результаты");
         request.IsAnonymous.Should().BeFalse();
         request.AllowsMultipleAnswers.Should().BeTrue();
@@ -55,7 +56,7 @@ public sealed class StartPollServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_ShouldDisableAddingOptionsWhenNineCandidatesArePublished()
+    public async Task StartAsync_ShouldPublishNonAnonymousPollWithoutAddingOptionsWhenNineCandidatesArePublished()
     {
         var tournaments = Enumerable.Range(1, 9)
             .Select(id => CreateTournament(id, $"Синхрон {id}", id))
@@ -66,7 +67,7 @@ public sealed class StartPollServiceTests
 
         var request = fixture.PollPublisher.PollRequests.Should().ContainSingle().Which;
         request.Options.Should().HaveCount(10);
-        request.IsAnonymous.Should().BeTrue();
+        request.IsAnonymous.Should().BeFalse();
         request.AllowAddingOptions.Should().BeFalse();
         request.ShuffleOptions.Should().BeFalse();
     }

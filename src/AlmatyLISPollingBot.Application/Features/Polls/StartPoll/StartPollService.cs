@@ -12,6 +12,8 @@ namespace AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 
 public sealed class StartPollService
 {
+    private const string PollQuestionFormat = "Выбираем 2 синхрона на субботу, {0:dd.MM.yyyy}:";
+
     private readonly IClock clock;
     private readonly IBotSettingsRepository settingsRepository;
     private readonly IReadOnlyLookupRepository lookupRepository;
@@ -135,10 +137,10 @@ public sealed class StartPollService
 
         return new PollPublicationRequest(
             chatId,
-            $"Выбираем 2 синхрона на субботу, {targetDate:dd.MM.yyyy}:",
+            string.Format(PollQuestionFormat, targetDate),
             options,
             stopAtUtc,
-            IsAnonymous: candidates.Count == PollRules.MaxTournamentOptions,
+            IsAnonymous: false,
             AllowsMultipleAnswers: true,
             ShuffleOptions: false,
             AllowAddingOptions: candidates.Count < PollRules.MaxTournamentOptions);
