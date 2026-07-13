@@ -1,6 +1,7 @@
 using AlmatyLISPollingBot.Application.Features.MakePost;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
+using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Application.Contracts.Polls;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -48,7 +49,7 @@ public sealed class TelegramUpdateRouter
             user.Id,
             message.Chat.Type == ChatType.Private);
 
-        if (await IsBotCommandAsync(messageText, "/poll", cancellationToken))
+        if (await IsBotCommandAsync(messageText, BotCommands.Poll, cancellationToken))
         {
             if (!await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
             {
@@ -60,7 +61,7 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
-        if (await IsBotCommandAsync(messageText, "/stop", cancellationToken))
+        if (await IsBotCommandAsync(messageText, BotCommands.Stop, cancellationToken))
         {
             if (!await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
             {
@@ -72,7 +73,7 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
-        if (await IsBotCommandAsync(messageText, "/makepost", cancellationToken))
+        if (await IsBotCommandAsync(messageText, BotCommands.MakePost, cancellationToken))
         {
             if (!commandContext.IsPrivateChat
                 || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
@@ -86,9 +87,10 @@ public sealed class TelegramUpdateRouter
         }
     }
 
-    private async Task<bool> IsBotCommandAsync(string messageText, string command, CancellationToken cancellationToken)
+    private async Task<bool> IsBotCommandAsync(string messageText, string commandName, CancellationToken cancellationToken)
     {
         var commandToken = GetCommandToken(messageText);
+        var command = BotCommands.ToMessageCommand(commandName);
         if (string.Equals(commandToken, command, StringComparison.OrdinalIgnoreCase))
         {
             return true;
