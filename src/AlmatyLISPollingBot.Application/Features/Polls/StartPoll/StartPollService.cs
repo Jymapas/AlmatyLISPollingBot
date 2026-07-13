@@ -135,7 +135,7 @@ public sealed class StartPollService
 
         return new PollPublicationRequest(
             chatId,
-            $"Какие синхроны отыгрываем в субботу, {targetDate:dd.MM.yyyy}?",
+            $"Выбираем 2 синхрона на субботу, {targetDate:dd.MM.yyyy}:",
             options,
             stopAtUtc,
             IsAnonymous: candidates.Count == PollRules.MaxTournamentOptions,
