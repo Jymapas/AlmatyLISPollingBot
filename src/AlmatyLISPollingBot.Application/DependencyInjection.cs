@@ -1,4 +1,5 @@
 using AlmatyLISPollingBot.Application.Features.Administrators;
+using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<TournamentListFormatter>();
         services.AddScoped<PollCommandAuthorizer>();
         services.AddScoped<AdminSyncService>();
+        services.AddScoped<ExcludeTournamentsService>();
 
         return services;
     }
