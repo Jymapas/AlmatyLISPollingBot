@@ -30,6 +30,7 @@ public sealed class TournamentListFormatterTests
         result.Pages.Should().ContainSingle();
         result.Pages[0].Should().Contain("A &amp; B");
         result.Pages[0].Should().Contain("<b>A &amp; B</b>");
+        result.Pages[0].Should().Contain("<b>ID:</b> <code>42</code>");
         result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
         result.Pages[0].Should().Contain("студенты — 3000₸");
         result.Pages[0].Should().Contain("Только первым");

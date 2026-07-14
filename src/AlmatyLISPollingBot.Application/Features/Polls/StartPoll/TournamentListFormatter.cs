@@ -71,6 +71,9 @@ public sealed class TournamentListFormatter
         builder.Append("\"><b>");
         builder.Append(Escape(TournamentTitleNormalizer.Normalize(tournament.Title)));
         builder.Append("</b></a>\n");
+        builder.Append("<b>ID:</b> <code>");
+        builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
+        builder.Append("</code>\n");
         builder.Append("<b>Редакторы:</b> ");
         builder.Append(Escape(FormatEditors(tournament.Editors)));
         builder.Append("\n<b>Вопросы:</b> ");
