@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\AlmatyLISPollingBot.Application\AlmatyLISPollingBot.Application.csproj" />
     <ProjectReference Include="..\..\src\AlmatyLISPollingBot.Domain\AlmatyLISPollingBot.Domain.csproj" />
     <ProjectReference Include="../../src/AlmatyLISPollingBot.Infrastructure/AlmatyLISPollingBot.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/AlmatyLISPollingBot.Worker/AlmatyLISPollingBot.Worker.csproj" />
   </ItemGroup>
 
 </Project>
