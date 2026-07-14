@@ -23,7 +23,6 @@ services:
     environment:
       POSTGRES_DB: ${DATABASE__NAME}
       POSTGRES_USER: ${DATABASE__USERNAME}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in secrets.env.}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
