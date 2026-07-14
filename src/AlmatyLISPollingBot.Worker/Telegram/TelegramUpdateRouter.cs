@@ -147,7 +147,7 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
-        if (await IsBotCommandAsync(messageText, "stop", cancellationToken))
+        if (await IsBotCommandAsync(messageText, BotCommands.Stop, cancellationToken))
         {
             if (!await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
             {
@@ -159,7 +159,7 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
-        if (await IsBotCommandAsync(messageText, "makepost", cancellationToken))
+        if (await IsBotCommandAsync(messageText, BotCommands.MakePost, cancellationToken))
         {
             if (!commandContext.IsPrivateChat
                 || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
