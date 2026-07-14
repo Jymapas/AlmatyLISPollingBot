@@ -6,9 +6,11 @@ using AlmatyLISPollingBot.Application.Features.MakePost;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
 using AlmatyLISPollingBot.Infrastructure;
+using AlmatyLISPollingBot.Infrastructure.Persistence;
 using AlmatyLISPollingBot.Worker.Configuration;
 using AlmatyLISPollingBot.Worker.HostedServices;
 using AlmatyLISPollingBot.Worker.Telegram;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
@@ -53,4 +55,11 @@ builder.Services.AddHostedService<TelegramCommandMenuInitializationService>();
 builder.Services.AddHostedService<TelegramLongPollingService>();
 
 var host = builder.Build();
+
+await using (var scope = host.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+
 await host.RunAsync();
