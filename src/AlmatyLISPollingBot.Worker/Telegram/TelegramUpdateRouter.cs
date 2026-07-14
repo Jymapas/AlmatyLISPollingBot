@@ -2,6 +2,8 @@ using AlmatyLISPollingBot.Application.Features.MakePost;
 using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
+using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
+using AlmatyLISPollingBot.Application.Contracts.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Application.Contracts.Polls;
 using Telegram.Bot;
@@ -20,6 +22,7 @@ public sealed class TelegramUpdateRouter
     private readonly ExcludeTournamentsService excludeTournamentsService;
     private readonly PollCommandAuthorizer pollCommandAuthorizer;
     private readonly IExcludeDialogState excludeDialogState;
+    private readonly IChgkTournamentClient tournamentClient;
     private readonly ITelegramBotClient botClient;
     private readonly ILogger<TelegramUpdateRouter> logger;
 
@@ -30,6 +33,7 @@ public sealed class TelegramUpdateRouter
         ExcludeTournamentsService excludeTournamentsService,
         PollCommandAuthorizer pollCommandAuthorizer,
         IExcludeDialogState excludeDialogState,
+        IChgkTournamentClient tournamentClient,
         ITelegramBotClient botClient,
         ILogger<TelegramUpdateRouter> logger)
     {
@@ -39,6 +43,7 @@ public sealed class TelegramUpdateRouter
         this.excludeTournamentsService = excludeTournamentsService;
         this.pollCommandAuthorizer = pollCommandAuthorizer;
         this.excludeDialogState = excludeDialogState;
+        this.tournamentClient = tournamentClient;
         this.botClient = botClient;
         this.logger = logger;
     }
@@ -166,7 +171,14 @@ public sealed class TelegramUpdateRouter
         }
 
         excludeDialogState.Cancel(userId);
-        await SendPrivateMessageAsync(chatId, FormatExclusionResult(result), cancellationToken);
+        var excludedTournamentIds = result.AddedTournamentIds
+            .Concat(result.AlreadyExcludedTournamentIds)
+            .ToArray();
+        var tournaments = await GetTournamentDetailsAsync(excludedTournamentIds, cancellationToken);
+        await SendPrivateMessageAsync(
+            chatId,
+            ExcludedTournamentResultFormatter.Format(result, tournaments),
+            cancellationToken);
         logger.LogInformation(
             "Processed tournament exclusions for Telegram user {TelegramUserId} in chat {ChatId}. Added: {AddedCount}; already excluded: {AlreadyExcludedCount}.",
             userId,
@@ -187,20 +199,22 @@ public sealed class TelegramUpdateRouter
             : string.Concat(text.AsSpan(0, TelegramMessageMaxLength - 1), "…");
     }
 
-    private static string FormatExclusionResult(ExcludeTournamentsResult result)
+    private async Task<IReadOnlyCollection<TournamentDetails>> GetTournamentDetailsAsync(
+        IReadOnlyCollection<int> tournamentIds,
+        CancellationToken cancellationToken)
     {
-        var messageParts = new List<string>();
-        if (result.AddedTournamentIds.Count > 0)
+        try
         {
-            messageParts.Add($"Исключены из будущих опросов: {string.Join(", ", result.AddedTournamentIds)}.");
+            return await tournamentClient.GetTournamentsByIdsAsync(tournamentIds, cancellationToken);
         }
-
-        if (result.AlreadyExcludedTournamentIds.Count > 0)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            messageParts.Add($"Уже были исключены: {string.Join(", ", result.AlreadyExcludedTournamentIds)}.");
+            logger.LogWarning(
+                exception,
+                "Could not load tournament titles for {TournamentCount} excluded tournaments.",
+                tournamentIds.Count);
+            return Array.Empty<TournamentDetails>();
         }
-
-        return string.Join("\n", messageParts);
     }
 
     private async Task<bool> IsBotCommandAsync(string messageText, string commandName, CancellationToken cancellationToken)
