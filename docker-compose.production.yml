@@ -1,6 +1,6 @@
 services:
   bot:
-    image: ${BOT_IMAGE:?Set BOT_IMAGE to the image tag being deployed.}
+    image: ${BOT_IMAGE:-almaty-lis-polling-bot:latest}
     container_name: almaty-lis-polling-bot
     env_file:
       - .env
