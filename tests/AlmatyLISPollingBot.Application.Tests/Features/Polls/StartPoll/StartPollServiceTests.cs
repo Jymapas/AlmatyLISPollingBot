@@ -75,6 +75,17 @@ public sealed class StartPollServiceTests
     }
 
     [Fact]
+    public async Task StartAsync_ShouldNormalizeTournamentTitleInPollOptions()
+    {
+        var fixture = new PollFixture(new[] { CreateTournament(title: "Синхронный турнир (СИНХРОН)  ") });
+
+        await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        var request = fixture.PollPublisher.PollRequests.Should().ContainSingle().Which;
+        request.Options.Should().Equal("Синхронный турнир", "посмотреть результаты");
+    }
+
+    [Fact]
     public async Task StartAsync_ShouldDeleteListAndAlertWhenPollPublicationFails()
     {
         var fixture = new PollFixture(new[] { CreateTournament() });

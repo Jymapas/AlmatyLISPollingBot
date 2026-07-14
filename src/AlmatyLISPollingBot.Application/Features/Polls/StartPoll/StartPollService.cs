@@ -129,7 +129,7 @@ public sealed class StartPollService
         DateTimeOffset stopAtUtc)
     {
         var options = candidates
-            .Select(x => TruncatePollOption(x.Tournament.Title))
+            .Select(x => TruncatePollOption(TournamentTitleNormalizer.Normalize(x.Tournament.Title)))
             .Append(PollRules.ResultsOptionTitle)
             .ToArray();
 

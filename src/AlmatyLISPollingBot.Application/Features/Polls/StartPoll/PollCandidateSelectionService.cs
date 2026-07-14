@@ -10,6 +10,34 @@ public sealed class PollCandidateSelectionService
         DateOnly targetDate,
         IReadOnlyCollection<int>? excludedTournamentIds = null)
     {
+        return SelectCandidates(
+            tournaments,
+            targetDate,
+            excludedTournamentIds,
+            includeExcluded: false,
+            maximumCandidateCount: PollRules.MaxTournamentOptions);
+    }
+
+    public IReadOnlyList<PollTournamentCandidate> SelectAllCandidates(
+        IEnumerable<TournamentDetails> tournaments,
+        DateOnly targetDate,
+        IReadOnlyCollection<int>? excludedTournamentIds = null)
+    {
+        return SelectCandidates(
+            tournaments,
+            targetDate,
+            excludedTournamentIds,
+            includeExcluded: true,
+            maximumCandidateCount: null);
+    }
+
+    private static IReadOnlyList<PollTournamentCandidate> SelectCandidates(
+        IEnumerable<TournamentDetails> tournaments,
+        DateOnly targetDate,
+        IReadOnlyCollection<int>? excludedTournamentIds,
+        bool includeExcluded,
+        int? maximumCandidateCount)
+    {
         ArgumentNullException.ThrowIfNull(tournaments);
 
         var excludedIds = excludedTournamentIds is null
@@ -18,11 +46,11 @@ public sealed class PollCandidateSelectionService
         var firstSlot = PollRules.GetSlotStart(targetDate, PollRules.FirstSlotTime);
         var secondSlot = PollRules.GetSlotStart(targetDate, PollRules.SecondSlotTime);
 
-        return tournaments
+        IEnumerable<CandidateAvailability> candidates = tournaments
             .Where(x => PollRules.IsSupportedTournamentType(x.TypeId))
             .Where(x => x.HasRussianLanguage)
             .Where(x => x.HasChgkGgRating)
-            .Where(x => !excludedIds.Contains(x.Id))
+            .Where(x => includeExcluded || !excludedIds.Contains(x.Id))
             .Select(x => new CandidateAvailability(
                 x,
                 PollRules.IsAvailableAtSlot(x.DateStart, x.DateEnd, firstSlot),
@@ -31,13 +59,22 @@ public sealed class PollCandidateSelectionService
             .OrderByDescending(x => x.Tournament.DifficultyForecast.HasValue)
             .ThenByDescending(x => x.Tournament.DifficultyForecast)
             .ThenBy(x => x.Tournament.Title, StringComparer.Ordinal)
-            .ThenBy(x => x.Tournament.Id)
-            .Take(PollRules.MaxTournamentOptions)
-            .Select(static (x, index) => new PollTournamentCandidate(
+            .ThenBy(x => x.Tournament.Id);
+
+        if (maximumCandidateCount is not null)
+        {
+            candidates = candidates.Take(maximumCandidateCount.Value);
+        }
+
+        return candidates
+            .Select((x, index) => new PollTournamentCandidate(
                 x.Tournament,
                 x.IsAvailableAtFirstSlot,
                 x.IsAvailableAtSecondSlot,
-                index))
+                index)
+            {
+                IsExcluded = excludedIds.Contains(x.Tournament.Id)
+            })
             .ToArray();
     }
 

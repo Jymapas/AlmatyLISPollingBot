@@ -29,6 +29,8 @@ public sealed class TournamentListFormatterTests
         result.HasUnconvertedPrices.Should().BeFalse();
         result.Pages.Should().ContainSingle();
         result.Pages[0].Should().Contain("A &amp; B");
+        result.Pages[0].Should().Contain("<b>A &amp; B</b>");
+        result.Pages[0].Should().Contain("<b>ID:</b> <code>42</code>");
         result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
         result.Pages[0].Should().Contain("студенты — 3000₸");
         result.Pages[0].Should().Contain("Только первым");
@@ -87,6 +89,37 @@ public sealed class TournamentListFormatterTests
         provider.RequestCount.Should().Be(1);
         provider.ReleaseFirstRequest();
         await formattingTask;
+    }
+
+    [Theory]
+    [InlineData("Турнир (СИНХРОН)  ", "Турнир")]
+    [InlineData("Турнир (АСИНХРОН И ОНЛАЙН)  ", "Турнир")]
+    [InlineData("Турнир (асинхрон/онлайн)  ", "Турнир")]
+    [InlineData("Турнир (АсИнХрОн)  ", "Турнир")]
+    public async Task FormatAsync_ShouldRemoveTerminalTechnicalTitleSuffix(string title, string expectedTitle)
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+
+        var result = await sut.FormatAsync(
+            new[] { CreateCandidate(title: title) },
+            CancellationToken.None);
+
+        result.Pages.Should().ContainSingle();
+        result.Pages[0].Should().Contain($"<b>{expectedTitle}</b>");
+        result.Pages[0].Should().NotContain(title.TrimEnd());
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldKeepTechnicalTextOutsideTheEndOfTitle()
+    {
+        const string title = "Турнир (синхрон) финал";
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+
+        var result = await sut.FormatAsync(
+            new[] { CreateCandidate(title: title) },
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain($"<b>{title}</b>");
     }
 
     private static PollTournamentCandidate CreateCandidate(

@@ -79,6 +79,24 @@ public sealed class PollCandidateSelectionServiceTests
         secondOnly.IsAvailableAtSecondSlot.Should().BeTrue();
     }
 
+    [Fact]
+    public void SelectAllCandidates_ShouldIncludeExcludedTournamentsWithoutLimit()
+    {
+        var tournaments = Enumerable.Range(1, 12)
+            .Select(id => CreateTournament(id, $"Tournament {id:00}", difficultyForecast: id))
+            .ToArray();
+
+        var result = sut.SelectAllCandidates(
+            tournaments,
+            TargetSaturday,
+            excludedTournamentIds: new[] { 10 });
+
+        result.Should().HaveCount(12);
+        result.Select(x => x.Tournament.Id).Should().Equal(12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
+        result.Single(x => x.Tournament.Id == 10).IsExcluded.Should().BeTrue();
+        result.Where(x => x.Tournament.Id != 10).Should().OnlyContain(x => !x.IsExcluded);
+    }
+
     private static TournamentDetails CreateTournament(
         int id,
         string title,
