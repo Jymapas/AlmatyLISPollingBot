@@ -12,6 +12,8 @@ namespace AlmatyLISPollingBot.Worker.Telegram;
 
 public sealed class TelegramUpdateRouter
 {
+    private const int TelegramMessageMaxLength = 4096;
+
     private readonly StartPollService startPollService;
     private readonly StopPollService stopPollService;
     private readonly MakePostService makePostService;
@@ -175,7 +177,14 @@ public sealed class TelegramUpdateRouter
 
     private Task SendPrivateMessageAsync(long chatId, string text, CancellationToken cancellationToken)
     {
-        return botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
+        return botClient.SendMessage(chatId, TruncateTelegramMessage(text), cancellationToken: cancellationToken);
+    }
+
+    private static string TruncateTelegramMessage(string text)
+    {
+        return text.Length <= TelegramMessageMaxLength
+            ? text
+            : string.Concat(text.AsSpan(0, TelegramMessageMaxLength - 1), "…");
     }
 
     private static string FormatExclusionResult(ExcludeTournamentsResult result)
