@@ -63,3 +63,5 @@ src/**/secrets.env
 .agents
 setup-skills.sh
 .idea
+deploy-to-opi.sh
+redeploy.sh

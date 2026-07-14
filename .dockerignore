@@ -1,0 +1,10 @@
+.git
+.agents
+.idea
+.vscode
+**/bin
+**/obj
+TestResults
+.env
+secrets.env
+.DS_Store
