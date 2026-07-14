@@ -175,7 +175,7 @@ public sealed class TelegramUpdateRouter
             .Concat(result.AlreadyExcludedTournamentIds)
             .ToArray();
         var tournaments = await GetTournamentDetailsAsync(excludedTournamentIds, cancellationToken);
-        await SendPrivateMessageAsync(
+        await SendHtmlPrivateMessageAsync(
             chatId,
             ExcludedTournamentResultFormatter.Format(result, tournaments),
             cancellationToken);
@@ -190,6 +190,11 @@ public sealed class TelegramUpdateRouter
     private Task SendPrivateMessageAsync(long chatId, string text, CancellationToken cancellationToken)
     {
         return botClient.SendMessage(chatId, TruncateTelegramMessage(text), cancellationToken: cancellationToken);
+    }
+
+    private Task SendHtmlPrivateMessageAsync(long chatId, string html, CancellationToken cancellationToken)
+    {
+        return botClient.SendMessage(chatId, html, parseMode: ParseMode.Html, cancellationToken: cancellationToken);
     }
 
     private static string TruncateTelegramMessage(string text)
