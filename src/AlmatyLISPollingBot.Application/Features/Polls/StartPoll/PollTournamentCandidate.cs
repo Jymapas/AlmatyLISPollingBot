@@ -6,4 +6,7 @@ public sealed record PollTournamentCandidate(
     TournamentDetails Tournament,
     bool IsAvailableAtFirstSlot,
     bool IsAvailableAtSecondSlot,
-    int SortOrder);
+    int SortOrder)
+{
+    public bool IsExcluded { get; init; }
+}

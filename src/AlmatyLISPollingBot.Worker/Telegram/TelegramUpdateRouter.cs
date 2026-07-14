@@ -1,5 +1,6 @@
 using AlmatyLISPollingBot.Application.Features.MakePost;
 using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
+using AlmatyLISPollingBot.Application.Features.Polls.Options;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
@@ -17,6 +18,7 @@ public sealed class TelegramUpdateRouter
     private const int TelegramMessageMaxLength = 4096;
 
     private readonly StartPollService startPollService;
+    private readonly ListTournamentOptionsService listTournamentOptionsService;
     private readonly StopPollService stopPollService;
     private readonly MakePostService makePostService;
     private readonly ExcludeTournamentsService excludeTournamentsService;
@@ -28,6 +30,7 @@ public sealed class TelegramUpdateRouter
 
     public TelegramUpdateRouter(
         StartPollService startPollService,
+        ListTournamentOptionsService listTournamentOptionsService,
         StopPollService stopPollService,
         MakePostService makePostService,
         ExcludeTournamentsService excludeTournamentsService,
@@ -38,6 +41,7 @@ public sealed class TelegramUpdateRouter
         ILogger<TelegramUpdateRouter> logger)
     {
         this.startPollService = startPollService;
+        this.listTournamentOptionsService = listTournamentOptionsService;
         this.stopPollService = stopPollService;
         this.makePostService = makePostService;
         this.excludeTournamentsService = excludeTournamentsService;
@@ -112,6 +116,34 @@ public sealed class TelegramUpdateRouter
 
             await startPollService.StartAsync(cancellationToken);
             logger.LogInformation("Received /poll command.");
+            return;
+        }
+
+        if (await IsBotCommandAsync(messageText, BotCommands.Options, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            var result = await listTournamentOptionsService.ExecuteAsync(cancellationToken);
+            if (result.Pages.Count == 0)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    $"Не найдено подходящих турниров на {result.TargetDate:dd.MM.yyyy}.",
+                    cancellationToken);
+            }
+            else
+            {
+                foreach (var page in result.Pages)
+                {
+                    await SendHtmlPrivateMessageAsync(message.Chat.Id, page, cancellationToken);
+                }
+            }
+
+            logger.LogInformation("Received /options command.");
             return;
         }
 

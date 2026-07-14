@@ -65,12 +65,12 @@ public sealed class TournamentListFormatter
     {
         var tournament = candidate.Tournament;
         var builder = new StringBuilder();
-        builder.Append(NumberEmoji[index]);
+        builder.Append(GetCandidateNumber(index));
         builder.Append(" <a href=\"https://rating.chgk.info/tournament/");
         builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
-        builder.Append("\">");
-        builder.Append(Escape(tournament.Title));
-        builder.Append("</a>\n");
+        builder.Append("\"><b>");
+        builder.Append(Escape(TournamentTitleNormalizer.Normalize(tournament.Title)));
+        builder.Append("</b></a>\n");
         builder.Append("<b>Редакторы:</b> ");
         builder.Append(Escape(FormatEditors(tournament.Editors)));
         builder.Append("\n<b>Вопросы:</b> ");
@@ -93,7 +93,19 @@ public sealed class TournamentListFormatter
             builder.Append("\n❗️ <b>Только вторым</b>");
         }
 
+        if (candidate.IsExcluded)
+        {
+            builder.Append("\n🚫 <b>Исключён</b>");
+        }
+
         return builder.ToString();
+    }
+
+    private static string GetCandidateNumber(int index)
+    {
+        return index < NumberEmoji.Length
+            ? NumberEmoji[index]
+            : string.Concat((index + 1).ToString(CultureInfo.InvariantCulture), ".");
     }
 
     private static IReadOnlyList<TournamentPaymentCategory> SelectPaymentCategories(TournamentDetails tournament)
