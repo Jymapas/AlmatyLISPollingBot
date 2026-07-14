@@ -1,11 +1,21 @@
+using System.Globalization;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Tournaments;
+using AlmatyLISPollingBot.Domain.Common;
+using AlmatyLISPollingBot.Infrastructure.Services.Chgk.Models;
 
 namespace AlmatyLISPollingBot.Infrastructure.Services;
 
 public sealed class ChgkTournamentClient : IChgkTournamentClient
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly HttpClient httpClient;
 
     public ChgkTournamentClient(HttpClient httpClient)
@@ -13,23 +23,31 @@ public sealed class ChgkTournamentClient : IChgkTournamentClient
         this.httpClient = httpClient;
     }
 
-    public async Task<IReadOnlyCollection<TournamentSummary>> GetTournamentsByDateAsync(
+    public async Task<IReadOnlyCollection<TournamentDetails>> GetTournamentsIntersectingDateAsync(
         DateOnly targetDate,
         CancellationToken cancellationToken)
     {
-        var route = $"api/tournaments?dateStart[after]={targetDate:yyyy-MM-dd}&dateStart[before]={targetDate:yyyy-MM-dd}";
+        var startOfDate = PollRules.GetSlotStart(targetDate, TimeOnly.MinValue);
+        var startOfNextDate = startOfDate.AddDays(1);
+        var route = string.Concat(
+            "tournaments?dateStart%5Bbefore%5D=",
+            Uri.EscapeDataString(startOfNextDate.ToString("O", CultureInfo.InvariantCulture)),
+            "&dateEnd%5Bafter%5D=",
+            Uri.EscapeDataString(startOfDate.ToString("O", CultureInfo.InvariantCulture)),
+            "&itemsPerPage=100");
+
         return await GetCollectionAsync(route, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<TournamentSummary>> GetTournamentsByIdsAsync(
+    public async Task<IReadOnlyCollection<TournamentDetails>> GetTournamentsByIdsAsync(
         IReadOnlyCollection<int> tournamentIds,
         CancellationToken cancellationToken)
     {
-        var result = new List<TournamentSummary>(tournamentIds.Count);
+        var result = new List<TournamentDetails>(tournamentIds.Count);
         foreach (var tournamentId in tournamentIds)
         {
-            var route = $"api/tournaments/{tournamentId}";
-            var payload = await httpClient.GetFromJsonAsync<TournamentDto>(route, cancellationToken);
+            var route = $"tournaments/{tournamentId}";
+            var payload = await GetAsync<TournamentDto>(route, cancellationToken);
             if (payload is not null)
             {
                 result.Add(payload.ToSummary());
@@ -39,33 +57,57 @@ public sealed class ChgkTournamentClient : IChgkTournamentClient
         return result;
     }
 
-    private async Task<IReadOnlyCollection<TournamentSummary>> GetCollectionAsync(string route, CancellationToken cancellationToken)
+    private async Task<IReadOnlyCollection<TournamentDetails>> GetCollectionAsync(string route, CancellationToken cancellationToken)
     {
-        var payload = await httpClient.GetFromJsonAsync<List<TournamentDto>>(route, cancellationToken);
-        return payload?.Select(x => x.ToSummary()).ToArray() ?? Array.Empty<TournamentSummary>();
+        var result = new List<TournamentDetails>();
+        var currentRoute = route;
+
+        while (!string.IsNullOrWhiteSpace(currentRoute))
+        {
+            var payload = await GetAsync<TournamentCollectionDto>(currentRoute, cancellationToken);
+            if (payload is null)
+            {
+                break;
+            }
+
+            result.AddRange(payload.Members.Select(x => x.ToSummary()));
+            currentRoute = GetSafeRelativeRoute(payload.View?.Next);
+        }
+
+        return result;
     }
 
-    private sealed class TournamentDto
+    private async Task<T?> GetAsync<T>(string route, CancellationToken cancellationToken)
     {
-        public int Id { get; init; }
-        public string Name { get; init; } = string.Empty;
-        public int Type { get; init; }
-        public bool? GgRating { get; init; }
-        public DateTimeOffset DateStart { get; init; }
-        public DateTimeOffset DateEnd { get; init; }
-        public decimal? DifficultyForecast { get; init; }
-
-        public TournamentSummary ToSummary()
+        using var request = new HttpRequestMessage(HttpMethod.Get, route);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/ld+json"));
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
         {
-            return new TournamentSummary(
-                Id,
-                Name,
-                Type,
-                GgRating ?? false,
-                DateStart,
-                DateEnd,
-                DifficultyForecast,
-                HasRussianLanguage: true);
+            throw new HttpRequestException(
+                $"CHGK API returned HTTP {(int)response.StatusCode}.",
+                null,
+                response.StatusCode);
         }
+
+        return await response.Content.ReadFromJsonAsync<T>(SerializerOptions, cancellationToken);
+    }
+
+    private static string? GetSafeRelativeRoute(string? route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return null;
+        }
+
+        var trimmedRoute = route.Trim();
+        if (!trimmedRoute.StartsWith("/", StringComparison.Ordinal)
+            || trimmedRoute.StartsWith("//", StringComparison.Ordinal)
+            || trimmedRoute.IndexOfAny(new[] { '\r', '\n', '\\' }) >= 0)
+        {
+            return null;
+        }
+
+        return trimmedRoute.TrimStart('/');
     }
 }

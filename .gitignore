@@ -56,3 +56,10 @@ nunit-*.xml
 # Local secrets
 secrets.env
 src/**/secrets.env
+.env
+
+# Local files
+.agents/.skills-repo
+.agents
+setup-skills.sh
+.idea

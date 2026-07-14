@@ -17,6 +17,7 @@ public sealed class BotDbContext : DbContext
     public DbSet<TournamentHistoryEntry> TournamentHistoryEntries => Set<TournamentHistoryEntry>();
     public DbSet<PollSession> PollSessions => Set<PollSession>();
     public DbSet<PollCandidate> PollCandidates => Set<PollCandidate>();
+    public DbSet<CurrencyExchangeRate> CurrencyExchangeRates => Set<CurrencyExchangeRate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +62,13 @@ public sealed class BotDbContext : DbContext
         modelBuilder.Entity<PollCandidate>(entity =>
         {
             entity.ToTable("poll_candidates");
+        });
+
+        modelBuilder.Entity<CurrencyExchangeRate>(entity =>
+        {
+            entity.ToTable("currency_exchange_rates");
+            entity.Property(x => x.CurrencyCode).HasMaxLength(3);
+            entity.HasIndex(x => x.CurrencyCode).IsUnique();
         });
     }
 }

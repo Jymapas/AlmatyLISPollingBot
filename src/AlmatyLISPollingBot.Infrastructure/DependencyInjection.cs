@@ -1,12 +1,13 @@
 using AlmatyLISPollingBot.Application.Abstractions.Clock;
+using AlmatyLISPollingBot.Application.Abstractions.Administrators;
+using AlmatyLISPollingBot.Application.Abstractions.ExchangeRates;
 using AlmatyLISPollingBot.Application.Abstractions.Persistence;
-using AlmatyLISPollingBot.Application.Abstractions.Scheduling;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Infrastructure.Persistence;
 using AlmatyLISPollingBot.Infrastructure.Persistence.Repositories;
-using AlmatyLISPollingBot.Infrastructure.Scheduling;
 using AlmatyLISPollingBot.Infrastructure.Services;
+using AlmatyLISPollingBot.Infrastructure.Services.ExchangeRates;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,12 @@ public static class DependencyInjection
 
         services.AddOptions<ChgkApiConfiguration>()
             .Bind(configuration.GetSection(ChgkApiConfiguration.SectionName))
-            .Validate(x => Uri.IsWellFormedUriString(x.BaseUrl, UriKind.Absolute), "Valid CHGK API base url is required.")
+            .Validate(x => IsHttpsUri(x.BaseUrl), "Valid HTTPS CHGK API base url is required.")
+            .ValidateOnStart();
+
+        services.AddOptions<NationalBankConfiguration>()
+            .Bind(configuration.GetSection(NationalBankConfiguration.SectionName))
+            .Validate(x => IsHttpsUri(x.BaseUrl), "Valid HTTPS National Bank base url is required.")
             .ValidateOnStart();
 
         services.AddDbContext<BotDbContext>((serviceProvider, options) =>
@@ -45,9 +51,10 @@ public static class DependencyInjection
         services.AddScoped<IBotSettingsRepository, BotSettingsRepository>();
         services.AddScoped<IPollSessionRepository, PollSessionRepository>();
         services.AddScoped<IReadOnlyLookupRepository, LookupRepository>();
+        services.AddScoped<IChatAdministratorRepository, ChatAdministratorRepository>();
+        services.AddScoped<ICurrencyExchangeRateRepository, CurrencyExchangeRateRepository>();
 
         services.AddSingleton<IClock, SystemClock>();
-        services.AddSingleton<IBackgroundJobScheduler, NoOpBackgroundJobScheduler>();
 
         services.AddHttpClient<IChgkTournamentClient, ChgkTournamentClient>((serviceProvider, client) =>
             {
@@ -55,6 +62,20 @@ public static class DependencyInjection
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<ChgkApiConfiguration>>()
                     .Value;
                 client.BaseAddress = new Uri(apiConfiguration.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+                options.Retry.MaxRetryAttempts = 3;
+            });
+
+        services.AddHttpClient<IExchangeRateProvider, NationalBankExchangeRateProvider>((serviceProvider, client) =>
+            {
+                var nationalBankConfiguration = serviceProvider
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<NationalBankConfiguration>>()
+                    .Value;
+                client.BaseAddress = new Uri(nationalBankConfiguration.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(30);
             })
             .AddStandardResilienceHandler(options =>
             {
@@ -65,5 +86,11 @@ public static class DependencyInjection
             .AddDbContextCheck<BotDbContext>("postgres", failureStatus: HealthStatus.Unhealthy);
 
         return services;
+    }
+
+    private static bool IsHttpsUri(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
     }
 }

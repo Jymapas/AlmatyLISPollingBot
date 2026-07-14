@@ -8,6 +8,10 @@ services:
     env_file:
       - .env
       - secrets.env
+    environment:
+      DATABASE__HOST: postgres
+    volumes:
+      - ./secrets.env:/app/secrets.env:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -15,13 +19,14 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    ports:
+      - "5433:5432"
     env_file:
       - .env
       - secrets.env
     environment:
       POSTGRES_DB: ${DATABASE__NAME}
       POSTGRES_USER: ${DATABASE__USERNAME}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
