@@ -1,10 +1,10 @@
 # Деплой на Orange Pi через GitHub Actions
 
-Этот проект разворачивается без Kubernetes и без container registry: GitHub Actions собирает ARM64-образ, передаёт его на Orange Pi по SSH и запускает через Docker Compose. PostgreSQL и файлы конфигурации остаются на Orange Pi.
+Этот проект разворачивается без Kubernetes и без container registry: GitHub Actions собирает ARM64-образ, через Tailscale передаёт его на Orange Pi по SSH и запускает через Docker Compose. PostgreSQL и файлы конфигурации остаются на Orange Pi. Порт SSH не открывается в интернет.
 
 ## Что понадобится
 
-- Orange Pi Zero 3 с 64-битной Ubuntu Server 24.04 и доступом по SSH из GitHub Actions (публичный IP с ограничением по firewall или Tailscale);
+- Orange Pi Zero 3 с 64-битной Ubuntu Server 24.04, подключённый к Tailscale;
 - репозиторий на GitHub и права на добавление Actions secrets;
 - данные Telegram-бота и параметры из `.env.example`.
 
@@ -64,36 +64,52 @@ chmod 600 .env
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/almaty-lis-polling-bot-github -C github-actions-almaty-lis-polling-bot
-ssh-copy-id -i ~/.ssh/almaty-lis-polling-bot-github.pub <user>@<orange-pi-host>
+ssh-copy-id -i ~/.ssh/almaty-lis-polling-bot-github.pub <user>@<orange-pi-tailscale-host>
 ```
 
 Проверьте вход:
 
 ```bash
-ssh -i ~/.ssh/almaty-lis-polling-bot-github <user>@<orange-pi-host>
+ssh -i ~/.ssh/almaty-lis-polling-bot-github <user>@<orange-pi-tailscale-host>
 ```
 
-## 6. Добавить GitHub Actions secrets
+## 6. Разрешить GitHub Actions доступ через Tailscale
+
+В Tailscale Admin Console создайте OAuth client с правом `auth_keys` и тегом `tag:github-actions`. В tailnet policy разрешите этому тегу обращаться к Orange Pi на SSH-порт, например:
+
+```json
+{
+  "action": "accept",
+  "src": ["tag:github-actions"],
+  "dst": ["orangepizero3:22"]
+}
+```
+
+Скопируйте ID и secret созданного OAuth client: secret показывается только один раз. Для постоянной интеграции можно заменить OAuth client на workload identity federation по документации Tailscale.
+
+## 7. Добавить GitHub Actions secrets
 
 Откройте репозиторий: **Settings → Secrets and variables → Actions → New repository secret**. Добавьте:
 
 | Secret | Значение |
 | --- | --- |
-| `ORANGE_PI_HOST` | IP-адрес либо Tailscale DNS-имя Orange Pi |
+| `ORANGE_PI_TAILSCALE_HOST` | Tailscale IP либо MagicDNS-имя Orange Pi |
 | `ORANGE_PI_PORT` | SSH-порт, обычно `22` |
 | `ORANGE_PI_USERNAME` | Пользователь Orange Pi, добавленный в группу `docker` |
 | `ORANGE_PI_SSH_PRIVATE_KEY` | Полное содержимое `~/.ssh/almaty-lis-polling-bot-github` |
 | `ORANGE_PI_DEPLOY_PATH` | `/opt/almaty-lis-polling-bot` |
+| `TS_OAUTH_CLIENT_ID` | ID OAuth client Tailscale с тегом `tag:github-actions` |
+| `TS_OAUTH_CLIENT_SECRET` | Secret этого OAuth client |
 
 Не добавляйте в GitHub Telegram token и пароли PostgreSQL: они уже хранятся в `.env` и `secrets.env` на Orange Pi.
 
-## 7. Отправить изменения в `main`
+## 8. Отправить изменения в `main`
 
 Workflow [`.github/workflows/deploy-orange-pi.yml`](../.github/workflows/deploy-orange-pi.yml) запускается при каждом push в `main`; его можно запустить вручную в GitHub: **Actions → Deploy to Orange Pi → Run workflow**.
 
 Pipeline сначала запускает тесты, затем собирает Docker-образ `linux/arm64`, передаёт его на сервер, сохраняет прежний образ под тегом `almaty-lis-polling-bot:previous` и перезапускает контейнеры.
 
-## 8. Проверить первый деплой
+## 9. Проверить первый деплой
 
 На Orange Pi выполните:
 
@@ -105,7 +121,7 @@ docker compose -f docker-compose.production.yml logs --tail=100 bot
 
 Статус `running` у `bot` и `postgres` означает, что Compose запустил контейнеры. В логах не должно быть ошибок конфигурации или Telegram.
 
-## 9. Откатить неудачный деплой
+## 10. Откатить неудачный деплой
 
 Если новый контейнер не работает, выполните на Orange Pi:
 

@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   test:
@@ -21,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - run: dotnet test AlmatyLISPollingBot.sln -c Release
 
   deploy:
@@ -33,6 +34,12 @@ jobs:
       DEPLOY_PATH: ${{ secrets.ORANGE_PI_DEPLOY_PATH }}
     steps:
       - uses: actions/checkout@v4
+      - name: Connect to the deployment tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          tags: tag:github-actions
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Build ARM64 Docker image
@@ -46,7 +53,7 @@ jobs:
       - name: Prepare Orange Pi directory
         uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ secrets.ORANGE_PI_HOST }}
+          host: ${{ secrets.ORANGE_PI_TAILSCALE_HOST }}
           port: ${{ secrets.ORANGE_PI_PORT }}
           username: ${{ secrets.ORANGE_PI_USERNAME }}
           key: ${{ secrets.ORANGE_PI_SSH_PRIVATE_KEY }}
@@ -54,7 +61,7 @@ jobs:
       - name: Upload deployment bundle
         uses: appleboy/scp-action@v1.0.0
         with:
-          host: ${{ secrets.ORANGE_PI_HOST }}
+          host: ${{ secrets.ORANGE_PI_TAILSCALE_HOST }}
           port: ${{ secrets.ORANGE_PI_PORT }}
           username: ${{ secrets.ORANGE_PI_USERNAME }}
           key: ${{ secrets.ORANGE_PI_SSH_PRIVATE_KEY }}
@@ -66,7 +73,7 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
           DEPLOY_PATH: ${{ secrets.ORANGE_PI_DEPLOY_PATH }}
         with:
-          host: ${{ secrets.ORANGE_PI_HOST }}
+          host: ${{ secrets.ORANGE_PI_TAILSCALE_HOST }}
           port: ${{ secrets.ORANGE_PI_PORT }}
           username: ${{ secrets.ORANGE_PI_USERNAME }}
           key: ${{ secrets.ORANGE_PI_SSH_PRIVATE_KEY }}
