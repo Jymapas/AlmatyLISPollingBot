@@ -97,6 +97,33 @@ public sealed class PollCandidateSelectionServiceTests
         result.Where(x => x.Tournament.Id != 10).Should().OnlyContain(x => !x.IsExcluded);
     }
 
+    [Fact]
+    public void SelectForcedCandidates_ShouldBypassRegularFiltersAndRespectOnlySlots()
+    {
+        var forcedTournament = CreateTournament(
+            id: 15,
+            title: "Forced tournament",
+            type: 8,
+            hasRussianLanguage: false,
+            hasChgkGgRating: false);
+        var unavailableTournament = CreateTournament(
+            id: 16,
+            title: "Unavailable",
+            type: 8,
+            hasRussianLanguage: false,
+            hasChgkGgRating: false,
+            dateStart: AtUtcPlusFive(2026, 3, 7, 8, 0),
+            dateEnd: AtUtcPlusFive(2026, 3, 7, 12, 0));
+
+        var result = sut.SelectForcedCandidates(
+            new[] { forcedTournament, unavailableTournament },
+            TargetSaturday,
+            new[] { 15, 16 });
+
+        result.Should().ContainSingle();
+        result[0].Tournament.Id.Should().Be(15);
+    }
+
     private static TournamentDetails CreateTournament(
         int id,
         string title,

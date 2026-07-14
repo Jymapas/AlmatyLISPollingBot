@@ -31,6 +31,37 @@ public sealed class PollCandidateSelectionService
             maximumCandidateCount: null);
     }
 
+    public IReadOnlyList<PollTournamentCandidate> SelectForcedCandidates(
+        IEnumerable<TournamentDetails> tournaments,
+        DateOnly targetDate,
+        IReadOnlyCollection<int> forcedTournamentIds)
+    {
+        ArgumentNullException.ThrowIfNull(tournaments);
+        ArgumentNullException.ThrowIfNull(forcedTournamentIds);
+
+        var tournamentsById = tournaments
+            .GroupBy(x => x.Id)
+            .ToDictionary(x => x.Key, x => x.First());
+        var firstSlot = PollRules.GetSlotStart(targetDate, PollRules.FirstSlotTime);
+        var secondSlot = PollRules.GetSlotStart(targetDate, PollRules.SecondSlotTime);
+
+        return forcedTournamentIds
+            .Distinct()
+            .Where(tournamentsById.ContainsKey)
+            .Select(tournamentId => tournamentsById[tournamentId])
+            .Select(x => new CandidateAvailability(
+                x,
+                PollRules.IsAvailableAtSlot(x.DateStart, x.DateEnd, firstSlot),
+                PollRules.IsAvailableAtSlot(x.DateStart, x.DateEnd, secondSlot)))
+            .Where(x => x.IsAvailableAtFirstSlot || x.IsAvailableAtSecondSlot)
+            .Select((x, index) => new PollTournamentCandidate(
+                x.Tournament,
+                x.IsAvailableAtFirstSlot,
+                x.IsAvailableAtSecondSlot,
+                index))
+            .ToArray();
+    }
+
     private static IReadOnlyList<PollTournamentCandidate> SelectCandidates(
         IEnumerable<TournamentDetails> tournaments,
         DateOnly targetDate,

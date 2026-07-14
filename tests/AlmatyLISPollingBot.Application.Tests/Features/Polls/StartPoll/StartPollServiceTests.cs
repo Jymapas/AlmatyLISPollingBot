@@ -98,17 +98,71 @@ public sealed class StartPollServiceTests
         fixture.ChatBotClient.Alerts.Should().ContainSingle().Which.Should().Contain("Не удалось опубликовать");
     }
 
-    private static TournamentDetails CreateTournament(int id = 7, string title = "Синхрон", decimal difficulty = 5m)
+    [Fact]
+    public async Task StartAsync_ShouldPrioritizeForcedTournamentAndDequeueItAfterPublication()
+    {
+        var forcedTournament = CreateTournament(
+            id: 2,
+            title: "Forced",
+            type: 8,
+            hasRussianLanguage: false,
+            hasChgkGgRating: false);
+        var regularTournament = CreateTournament(id: 1, title: "Regular", difficulty: 9m);
+        var fixture = new PollFixture(
+            new[] { regularTournament, forcedTournament },
+            forcedTournamentIds: new[] { 2 });
+
+        var session = await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        session!.Candidates.Select(x => x.TournamentId).Should().Equal(2, 1);
+        fixture.ForcedTournamentRepository.RemovedIds.Should().Equal(2);
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldSkipPublicationWhenMoreThanNineForcedTournamentsAreAvailable()
+    {
+        var tournaments = Enumerable.Range(1, 10)
+            .Select(id => CreateTournament(id, $"Forced {id}", type: 8, hasRussianLanguage: false, hasChgkGgRating: false))
+            .ToArray();
+        var fixture = new PollFixture(tournaments, forcedTournamentIds: Enumerable.Range(1, 10).ToArray());
+
+        var session = await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        session.Should().BeNull();
+        fixture.PollPublisher.PollRequests.Should().BeEmpty();
+        fixture.ForcedTournamentRepository.RemovedIds.Should().BeEmpty();
+        fixture.ChatBotClient.Alerts.Should().ContainSingle().Which.Should().Contain("лимит");
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldKeepForcedTournamentQueuedWhenPublicationFails()
+    {
+        var fixture = new PollFixture(new[] { CreateTournament(id: 2) }, forcedTournamentIds: new[] { 2 });
+        fixture.PollPublisher.ThrowOnPoll = true;
+
+        var action = () => fixture.CreateService().StartAsync(CancellationToken.None);
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+        fixture.ForcedTournamentRepository.RemovedIds.Should().BeEmpty();
+    }
+
+    private static TournamentDetails CreateTournament(
+        int id = 7,
+        string title = "Синхрон",
+        decimal difficulty = 5m,
+        int type = 3,
+        bool hasRussianLanguage = true,
+        bool hasChgkGgRating = true)
     {
         return new TournamentDetails(
             id,
             title,
-            3,
+            type,
             new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.FromHours(5)),
             new DateTimeOffset(2026, 3, 7, 16, 0, 0, TimeSpan.FromHours(5)),
             difficulty,
-            new[] { new TournamentLanguage("ru", "Русский") },
-            new[] { "chgkgg" },
+            hasRussianLanguage ? new[] { new TournamentLanguage("ru", "Русский") } : Array.Empty<TournamentLanguage>(),
+            hasChgkGgRating ? new[] { "chgkgg" } : Array.Empty<string>(),
             new[] { new TournamentEditor("Иван", "Иванович", "Иванов") },
             new Dictionary<int, int> { [1] = 36 },
             Array.Empty<TournamentPaymentCategory>());
@@ -118,13 +172,17 @@ public sealed class StartPollServiceTests
     {
         private readonly IReadOnlyCollection<TournamentDetails> tournaments;
 
-        public PollFixture(IReadOnlyCollection<TournamentDetails> tournaments)
+        public PollFixture(
+            IReadOnlyCollection<TournamentDetails> tournaments,
+            IReadOnlyCollection<int>? forcedTournamentIds = null)
         {
             this.tournaments = tournaments;
+            ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds);
         }
 
         public StubPollPublisher PollPublisher { get; } = new();
         public StubChatBotClient ChatBotClient { get; } = new();
+        public StubForcedTournamentRepository ForcedTournamentRepository { get; }
 
         public StartPollService CreateService()
         {
@@ -132,6 +190,7 @@ public sealed class StartPollServiceTests
                 new StubClock(),
                 new StubSettingsRepository(),
                 new StubLookupRepository(),
+                ForcedTournamentRepository,
                 new StubPollSessionRepository(),
                 new StubTournamentClient(tournaments),
                 new PollCandidateSelectionService(),
@@ -179,6 +238,39 @@ public sealed class StartPollServiceTests
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class StubForcedTournamentRepository : IForcedTournamentRepository
+    {
+        private readonly IReadOnlyCollection<ForcedTournament> queuedTournaments;
+
+        public StubForcedTournamentRepository(IReadOnlyCollection<int>? forcedTournamentIds = null)
+        {
+            queuedTournaments = (forcedTournamentIds ?? Array.Empty<int>())
+                .Select((tournamentId, index) => new ForcedTournament
+                {
+                    TournamentId = tournamentId,
+                    QueuedAtUtc = new DateTimeOffset(2026, 3, 1, 0, index, 0, TimeSpan.Zero)
+                })
+                .ToArray();
+        }
+
+        public IReadOnlyCollection<int> RemovedIds { get; private set; } = Array.Empty<int>();
+
+        public Task<IReadOnlyCollection<ForcedTournament>> GetQueuedAsync(CancellationToken cancellationToken)
+            => Task.FromResult(queuedTournaments);
+
+        public Task<IReadOnlyCollection<int>> AddMissingAsync(
+            IReadOnlyCollection<int> tournamentIds,
+            DateTimeOffset queuedAtUtc,
+            CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyCollection<int>>(tournamentIds);
+
+        public Task RemoveAsync(IReadOnlyCollection<int> tournamentIds, CancellationToken cancellationToken)
+        {
+            RemovedIds = tournamentIds;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class StubTournamentClient : IChgkTournamentClient

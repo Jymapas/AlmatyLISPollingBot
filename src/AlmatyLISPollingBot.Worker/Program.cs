@@ -42,7 +42,7 @@ builder.Services.AddScoped<StartPollService>();
 builder.Services.AddScoped<StopPollService>();
 builder.Services.AddScoped<MakePostService>();
 builder.Services.AddScoped<TelegramUpdateRouter>();
-builder.Services.AddSingleton<IExcludeDialogState, InMemoryExcludeDialogState>();
+builder.Services.AddSingleton<IPrivateAdminDialogState, InMemoryPrivateAdminDialogState>();
 builder.Services.AddScoped<IChatBotClient, TelegramMainAdminClient>();
 builder.Services.AddScoped<IPollPublisher, TelegramPollPublisher>();
 builder.Services.AddScoped<IChatAdministratorClient, TelegramChatAdministratorClient>();

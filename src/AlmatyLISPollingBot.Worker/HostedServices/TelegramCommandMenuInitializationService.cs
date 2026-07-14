@@ -20,7 +20,8 @@ public sealed class TelegramCommandMenuInitializationService : IHostedService
         new(BotCommands.Stop, "Остановить опрос"),
         new(BotCommands.Options, "Показать турниры"),
         new(BotCommands.Exclude, "Исключить турниры"),
-        new(BotCommands.Cancel, "Отменить исключение"),
+        new(BotCommands.Force, "Добавить синхрон в опрос"),
+        new(BotCommands.Cancel, "Отменить диалог"),
         new(BotCommands.MakePost, "Сформировать пост")
     };
 
