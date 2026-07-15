@@ -16,6 +16,8 @@ public static class DependencyInjection
         services.AddScoped<ListTournamentOptionsService>();
         services.AddScoped<PollCommandAuthorizer>();
         services.AddScoped<AdminSyncService>();
+        services.AddScoped<BotSettingsSyncService>();
+        services.AddScoped<UpdateSettingsService>();
         services.AddScoped<ExcludeTournamentsService>();
         services.AddScoped<ForceTournamentsService>();
 

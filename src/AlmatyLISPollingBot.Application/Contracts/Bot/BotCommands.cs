@@ -9,6 +9,7 @@ public static class BotCommands
     public const string Cancel = "cancel";
     public const string Stop = "stop";
     public const string MakePost = "makepost";
+    public const string UpdateSettings = "update_settings";
 
     public static string ToMessageCommand(string command) => string.Concat('/', command);
 }

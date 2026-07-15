@@ -1,4 +1,5 @@
 using AlmatyLISPollingBot.Application.Features.MakePost;
+using AlmatyLISPollingBot.Application.Features.Administrators;
 using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
 using AlmatyLISPollingBot.Application.Features.ForcedTournaments;
 using AlmatyLISPollingBot.Application.Features.Polls.Options;
@@ -11,6 +12,8 @@ using AlmatyLISPollingBot.Application.Contracts.Polls;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using AlmatyLISPollingBot.Worker.HostedServices;
+using Microsoft.Extensions.Options;
 
 namespace AlmatyLISPollingBot.Worker.Telegram;
 
@@ -24,7 +27,10 @@ public sealed class TelegramUpdateRouter
     private readonly MakePostService makePostService;
     private readonly ExcludeTournamentsService excludeTournamentsService;
     private readonly ForceTournamentsService forceTournamentsService;
+    private readonly UpdateSettingsService updateSettingsService;
     private readonly PollCommandAuthorizer pollCommandAuthorizer;
+    private readonly TelegramCommandMenuInitializationService commandMenuInitializationService;
+    private readonly IOptions<BotConfiguration> botConfiguration;
     private readonly IPrivateAdminDialogState privateAdminDialogState;
     private readonly IChgkTournamentClient tournamentClient;
     private readonly ITelegramBotClient botClient;
@@ -37,7 +43,10 @@ public sealed class TelegramUpdateRouter
         MakePostService makePostService,
         ExcludeTournamentsService excludeTournamentsService,
         ForceTournamentsService forceTournamentsService,
+        UpdateSettingsService updateSettingsService,
         PollCommandAuthorizer pollCommandAuthorizer,
+        TelegramCommandMenuInitializationService commandMenuInitializationService,
+        IOptions<BotConfiguration> botConfiguration,
         IPrivateAdminDialogState privateAdminDialogState,
         IChgkTournamentClient tournamentClient,
         ITelegramBotClient botClient,
@@ -49,7 +58,10 @@ public sealed class TelegramUpdateRouter
         this.makePostService = makePostService;
         this.excludeTournamentsService = excludeTournamentsService;
         this.forceTournamentsService = forceTournamentsService;
+        this.updateSettingsService = updateSettingsService;
         this.pollCommandAuthorizer = pollCommandAuthorizer;
+        this.commandMenuInitializationService = commandMenuInitializationService;
+        this.botConfiguration = botConfiguration;
         this.privateAdminDialogState = privateAdminDialogState;
         this.tournamentClient = tournamentClient;
         this.botClient = botClient;
@@ -70,6 +82,36 @@ public sealed class TelegramUpdateRouter
             message.Chat.Id,
             user.Id,
             message.Chat.Type == ChatType.Private);
+
+        if (await IsBotCommandAsync(messageText, BotCommands.UpdateSettings, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || commandContext.UserId != botConfiguration.Value.MainAdminUserId)
+            {
+                return;
+            }
+
+            try
+            {
+                await updateSettingsService.ExecuteAsync(botConfiguration.Value, cancellationToken);
+                await commandMenuInitializationService.ConfigureAsync(cancellationToken);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Настройки и список администраторов обновлены.",
+                    cancellationToken);
+                logger.LogInformation("Main admin manually synchronized bot settings and administrator cache.");
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(exception, "Main admin could not synchronize bot settings and administrator cache.");
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Не удалось обновить настройки и список администраторов. Попробуйте ещё раз позже.",
+                    cancellationToken);
+            }
+
+            return;
+        }
 
         if (await IsBotCommandAsync(messageText, BotCommands.Exclude, cancellationToken))
         {

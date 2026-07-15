@@ -44,6 +44,11 @@ public sealed class TelegramCommandMenuInitializationService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        await ConfigureAsync(cancellationToken);
+    }
+
+    public async Task ConfigureAsync(CancellationToken cancellationToken)
+    {
         var targetChatId = botConfiguration.Value.TargetChatId;
 
         await botClient.DeleteMyCommands(scope: new BotCommandScopeDefault(), cancellationToken: cancellationToken);

@@ -51,7 +51,9 @@ builder.Services.AddScoped<IChatAdministratorClient, TelegramChatAdministratorCl
 
 builder.Services.AddHostedService<BotSettingsInitializationService>();
 builder.Services.AddHostedService<AdminSyncSchedulerService>();
-builder.Services.AddHostedService<TelegramCommandMenuInitializationService>();
+builder.Services.AddSingleton<TelegramCommandMenuInitializationService>();
+builder.Services.AddHostedService(serviceProvider =>
+    serviceProvider.GetRequiredService<TelegramCommandMenuInitializationService>());
 builder.Services.AddHostedService<TelegramLongPollingService>();
 
 var host = builder.Build();
