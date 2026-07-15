@@ -17,7 +17,9 @@ cp secrets.env.example secrets.env
 chmod 600 .env secrets.env
 ```
 
-Заполните `TELEGRAM__BOTTOKEN`, `BOT__MAINADMINUSERID`, `BOT__TARGETCHATID` и остальные значения в `.env`. В `secrets.env` задайте одинаковый сильный пароль для `DATABASE__PASSWORD` и `POSTGRES_PASSWORD`.
+Заполните `TELEGRAM__BOTTOKEN`, `BOT__MAINADMINUSERID`, `BOT__TARGETCHATID` и остальные значения в `.env`. Для production подключение использует PostgreSQL от SnakeFrogCalendarBot: укажите `DATABASE__NAME`, `DATABASE__USERNAME` и `DATABASE__PASSWORD` теми же значениями, что `POSTGRES_DB`, `POSTGRES_USER` и `POSTGRES_PASSWORD` у SnakeFrogCalendarBot. `DATABASE__HOST` в production принудительно задан как `snakefrogcalendarbot-postgres`, а `DATABASE__PORT` должен быть `5432`.
+
+Перед первым redeploy убедитесь, что SnakeFrogCalendarBot запущен командой `docker compose up -d` из своего каталога. Это создаёт сеть `snakefrogcalendarbot_default`, к которой подключается LIS-бот. PostgreSQL-контейнер LIS больше не создаётся.
 
 ## Деплой
 
@@ -34,7 +36,7 @@ chmod 600 .env secrets.env
 ./deploy-to-opi.sh --redeploy --no-cache
 ```
 
-Скрипт никогда не передаёт `.env` и `secrets.env`, поэтому секреты остаются на Orange Pi. База PostgreSQL хранится в Docker volume и не удаляется при redeploy.
+Скрипт никогда не передаёт `.env` и `secrets.env`, поэтому секреты остаются на Orange Pi. База PostgreSQL хранится в Docker volume SnakeFrogCalendarBot и не удаляется при redeploy.
 
 ## Проверка и откат
 
