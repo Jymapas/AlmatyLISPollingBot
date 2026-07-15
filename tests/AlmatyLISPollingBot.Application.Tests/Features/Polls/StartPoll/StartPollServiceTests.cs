@@ -26,7 +26,7 @@ public sealed class StartPollServiceTests
         session.ListMessageId.Should().Be(101);
         session.PollMessageId.Should().Be(102);
         session.TelegramPollId.Should().Be("telegram-poll-id");
-        session.ScheduledStopAtUtc.Should().Be(new DateTimeOffset(2026, 3, 5, 16, 0, 0, TimeSpan.Zero));
+        session.ScheduledStopAtUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 16, 0, 0, TimeSpan.Zero));
         session.Candidates.Should().ContainSingle();
         session.Candidates[0].IsAvailableAtFirstSlot.Should().BeTrue();
         session.Candidates[0].IsAvailableAtSecondSlot.Should().BeTrue();
@@ -40,7 +40,7 @@ public sealed class StartPollServiceTests
         request.AllowsMultipleAnswers.Should().BeTrue();
         request.ShuffleOptions.Should().BeFalse();
         request.AllowAddingOptions.Should().BeTrue();
-        request.CloseDateUtc.Should().Be(new DateTimeOffset(2026, 3, 5, 16, 0, 0, TimeSpan.Zero));
+        request.CloseDateUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 16, 0, 0, TimeSpan.Zero));
         fixture.ChatBotClient.Alerts.Should().BeEmpty();
     }
 

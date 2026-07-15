@@ -5,7 +5,7 @@ public static class PollRules
     public const int MaxPollOptions = 10;
     public const int ResultOptionSlots = 1;
     public const int MaxTournamentOptions = MaxPollOptions - ResultOptionSlots;
-    public const int PollStopDaysBeforeTargetDate = 2;
+    public const int PollStopDaysBeforeTargetDate = 1;
     public const string ResultsOptionTitle = "посмотреть результаты";
     public static readonly TimeSpan SlotUtcOffset = TimeSpan.FromHours(5);
     public static readonly TimeOnly FirstSlotTime = new(13, 0);
