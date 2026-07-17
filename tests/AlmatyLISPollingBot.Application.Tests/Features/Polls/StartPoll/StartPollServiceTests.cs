@@ -17,7 +17,14 @@ public sealed class StartPollServiceTests
     [Fact]
     public async Task StartAsync_ShouldPublishSingleCandidatePollWithAddingOptionsEnabled()
     {
-        var fixture = new PollFixture(new[] { CreateTournament() });
+        var fixture = new PollFixture(new[]
+        {
+            CreateTournament(paymentCategories: new[]
+            {
+                new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                new TournamentPaymentCategory(3000m, "KZT", "студенты")
+            })
+        });
 
         var session = await fixture.CreateService().StartAsync(CancellationToken.None);
 
@@ -34,6 +41,7 @@ public sealed class StartPollServiceTests
 
         fixture.PollPublisher.HtmlMessages.Should().ContainSingle();
         fixture.PollPublisher.HtmlMessages[0].Should().NotContain("<b>ID:</b>");
+        fixture.PollPublisher.HtmlMessages[0].Should().Contain("студенты — 3000₸");
         fixture.PollPublisher.PollRequests.Should().ContainSingle();
         var request = fixture.PollPublisher.PollRequests[0];
         request.Question.Should().Be("Выбираем 2 синхрона на субботу, 07.03.2026:");
@@ -206,7 +214,8 @@ public sealed class StartPollServiceTests
         int type = 3,
         bool hasRussianLanguage = true,
         bool hasChgkGgRating = true,
-        DateOnly? targetDate = null)
+        DateOnly? targetDate = null,
+        IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null)
     {
         var date = targetDate ?? new DateOnly(2026, 3, 7);
         return new TournamentDetails(
@@ -220,7 +229,7 @@ public sealed class StartPollServiceTests
             hasChgkGgRating ? new[] { "chgkgg" } : Array.Empty<string>(),
             new[] { new TournamentEditor("Иван", "Иванович", "Иванов") },
             new Dictionary<int, int> { [1] = 36 },
-            Array.Empty<TournamentPaymentCategory>());
+            paymentCategories ?? Array.Empty<TournamentPaymentCategory>());
     }
 
     private sealed class PollFixture

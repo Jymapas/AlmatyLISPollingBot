@@ -27,6 +27,7 @@ public sealed class TournamentListFormatterTests
         var result = await sut.FormatAsync(
             new[] { candidate },
             TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.HasUnconvertedPrices.Should().BeFalse();
@@ -57,6 +58,7 @@ public sealed class TournamentListFormatterTests
         var result = await sut.FormatAsync(
             new[] { candidate },
             TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.HasUnconvertedPrices.Should().BeFalse();
@@ -74,6 +76,7 @@ public sealed class TournamentListFormatterTests
         var result = await sut.FormatAsync(
             new[] { candidate },
             TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.HasUnconvertedPrices.Should().BeTrue();
@@ -95,6 +98,7 @@ public sealed class TournamentListFormatterTests
         var formattingTask = sut.FormatAsync(
             candidates,
             TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
         await provider.FirstRequestStarted;
 
@@ -115,6 +119,7 @@ public sealed class TournamentListFormatterTests
         var result = await sut.FormatAsync(
             new[] { CreateCandidate(title: title) },
             TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.Pages.Should().ContainSingle();
@@ -131,6 +136,7 @@ public sealed class TournamentListFormatterTests
         var result = await sut.FormatAsync(
             new[] { CreateCandidate(title: title) },
             TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.Pages[0].Should().Contain($"<b>{title}</b>");
@@ -144,11 +150,36 @@ public sealed class TournamentListFormatterTests
         var result = await sut.FormatAsync(
             new[] { CreateCandidate() },
             TournamentIdDisplayMode.WithoutTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.Pages.Should().ContainSingle();
         result.Pages[0].Should().NotContain("<b>ID:</b>");
         result.Pages[0].Should().Contain("https://rating.chgk.info/tournament/42");
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldShowOnlyPrimaryPaymentCategoryWhenRequested()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidate = CreateCandidate(
+            paymentCategories: new[]
+            {
+                new TournamentPaymentCategory(900m, "RUB", "по умолчанию"),
+                new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                new TournamentPaymentCategory(3000m, "KZT", "студенты")
+            });
+
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.PrimaryOnly,
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
+        result.Pages[0].Should().NotContain("900₽");
+        result.Pages[0].Should().NotContain("студенты");
+        result.Pages[0].Should().NotContain("3000₸");
     }
 
     private static PollTournamentCandidate CreateCandidate(

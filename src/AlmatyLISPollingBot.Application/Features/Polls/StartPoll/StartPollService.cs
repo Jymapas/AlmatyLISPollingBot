@@ -118,6 +118,7 @@ public sealed class StartPollService
         var formattingResult = await tournamentListFormatter.FormatAsync(
             candidates,
             TournamentIdDisplayMode.WithoutTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             cancellationToken);
         var publicationRequest = CreatePublicationRequest(
             settings.TargetChatId,

@@ -23,12 +23,21 @@ public sealed class TournamentListFormatter
     public async Task<TournamentListFormattingResult> FormatAsync(
         IReadOnlyList<PollTournamentCandidate> candidates,
         TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         if (tournamentIdDisplayMode is not (TournamentIdDisplayMode.WithTournamentId or TournamentIdDisplayMode.WithoutTournamentId))
         {
             throw new ArgumentOutOfRangeException(nameof(tournamentIdDisplayMode), tournamentIdDisplayMode, "Unsupported tournament ID display mode.");
+        }
+
+        if (paymentCategoriesDisplayMode is not (TournamentPaymentCategoriesDisplayMode.All or TournamentPaymentCategoriesDisplayMode.PrimaryOnly))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(paymentCategoriesDisplayMode),
+                paymentCategoriesDisplayMode,
+                "Unsupported tournament payment categories display mode.");
         }
 
         var selectedCurrencies = candidates
@@ -56,6 +65,7 @@ public sealed class TournamentListFormatter
                 SelectPaymentCategories(candidate.Tournament),
                 rates,
                 tournamentIdDisplayMode,
+                paymentCategoriesDisplayMode,
                 ref hasUnconvertedPrices));
         }
 
@@ -68,6 +78,7 @@ public sealed class TournamentListFormatter
         IReadOnlyList<TournamentPaymentCategory> paymentCategories,
         IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
         TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
         ref bool hasUnconvertedPrices)
     {
         var tournament = candidate.Tournament;
@@ -94,7 +105,11 @@ public sealed class TournamentListFormatter
         if (paymentCategories.Count > 0)
         {
             builder.Append('\n');
-            builder.Append(FormatPaymentCategories(paymentCategories, rates, ref hasUnconvertedPrices));
+            builder.Append(FormatPaymentCategories(
+                paymentCategories,
+                paymentCategoriesDisplayMode,
+                rates,
+                ref hasUnconvertedPrices));
         }
 
         if (candidate.IsAvailableAtFirstSlot && !candidate.IsAvailableAtSecondSlot)
@@ -142,13 +157,17 @@ public sealed class TournamentListFormatter
 
     private static string FormatPaymentCategories(
         IReadOnlyList<TournamentPaymentCategory> paymentCategories,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
         IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
         ref bool hasUnconvertedPrices)
     {
+        var categoriesToDisplay = paymentCategoriesDisplayMode == TournamentPaymentCategoriesDisplayMode.PrimaryOnly
+            ? paymentCategories.Take(1).ToArray()
+            : paymentCategories;
         var builder = new StringBuilder();
-        for (var index = 0; index < paymentCategories.Count; index++)
+        for (var index = 0; index < categoriesToDisplay.Count; index++)
         {
-            var category = paymentCategories[index];
+            var category = categoriesToDisplay[index];
             var price = FormatPrice(category, rates, ref hasUnconvertedPrices);
             var label = FormatCategoryLabel(category, index == 0);
 
@@ -168,7 +187,7 @@ public sealed class TournamentListFormatter
             }
 
             builder.Append(price);
-            if (index < paymentCategories.Count - 1)
+            if (index < categoriesToDisplay.Count - 1)
             {
                 builder.Append('\n');
             }

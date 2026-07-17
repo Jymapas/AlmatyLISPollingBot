@@ -45,12 +45,42 @@ public sealed class ListTournamentOptionsServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldShowOnlyPrimaryPaymentCategory()
+    {
+        var tournament = CreateTournament(
+            1,
+            "С ценами",
+            4m,
+            paymentCategories: new[]
+            {
+                new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                new TournamentPaymentCategory(3000m, "KZT", "студенты")
+            });
+        var sut = CreateService(new[] { tournament }, Array.Empty<int>());
+
+        var result = await sut.ExecuteAsync(CancellationToken.None);
+
+        result.Pages.Should().ContainSingle();
+        result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
+        result.Pages[0].Should().NotContain("студенты");
+        result.Pages[0].Should().NotContain("3000₸");
+    }
+
+    [Fact]
     public async Task ExecuteExcludedAsync_ShouldListOnlyExcludedEligibleTournaments()
     {
         var tournaments = new[]
         {
             CreateTournament(1, "Обычный", 4m),
-            CreateTournament(2, "Исключённый", 5m),
+            CreateTournament(
+                2,
+                "Исключённый",
+                5m,
+                paymentCategories: new[]
+                {
+                    new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                    new TournamentPaymentCategory(3000m, "KZT", "студенты")
+                }),
             CreateTournament(3, "Неподходящий", 6m, type: 8)
         };
         var sut = CreateService(tournaments, excludedTournamentIds: new[] { 2, 3 });
@@ -62,6 +92,7 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages[0].Should().Contain("<b>Исключённый</b>");
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
         result.Pages[0].Should().NotContain("<b>ID:</b>");
+        result.Pages[0].Should().Contain("студенты — 3000₸");
         result.Pages[0].Should().NotContain("Обычный");
         result.Pages[0].Should().NotContain("Неподходящий");
     }
@@ -92,7 +123,12 @@ public sealed class ListTournamentOptionsServiceTests
             new TournamentListFormatter(new StubExchangeRateProvider()));
     }
 
-    private static TournamentDetails CreateTournament(int id, string title, decimal difficulty, int type = 3)
+    private static TournamentDetails CreateTournament(
+        int id,
+        string title,
+        decimal difficulty,
+        int type = 3,
+        IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null)
     {
         return new TournamentDetails(
             id,
@@ -105,7 +141,7 @@ public sealed class ListTournamentOptionsServiceTests
             new[] { "chgkgg" },
             Array.Empty<TournamentEditor>(),
             new Dictionary<int, int>(),
-            Array.Empty<TournamentPaymentCategory>());
+            paymentCategories ?? Array.Empty<TournamentPaymentCategory>());
     }
 
     private sealed class StubClock : IClock
