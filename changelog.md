@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 - `/options` now shows only the primary tournament price to keep its messages compact.
 - Private admin command `/preview` for a side-effect-free preview of the next poll candidates, accounting for force and exclude.
 
+### Changed
+
+- CHGK date queries use the API's maximum page size to reduce pagination requests.
+
 ## [0.1.0] - 2026-07-17
 
 ### Added

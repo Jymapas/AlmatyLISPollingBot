@@ -11,6 +11,9 @@ namespace AlmatyLISPollingBot.Infrastructure.Services;
 
 public sealed class ChgkTournamentClient : IChgkTournamentClient
 {
+    // The CHGK OpenAPI contract documents 512 as the maximum collection page size.
+    private const int TournamentCollectionPageSize = 512;
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -34,7 +37,8 @@ public sealed class ChgkTournamentClient : IChgkTournamentClient
             Uri.EscapeDataString(startOfNextDate.ToString("O", CultureInfo.InvariantCulture)),
             "&dateEnd%5Bafter%5D=",
             Uri.EscapeDataString(startOfDate.ToString("O", CultureInfo.InvariantCulture)),
-            "&itemsPerPage=100");
+            "&itemsPerPage=",
+            TournamentCollectionPageSize.ToString(CultureInfo.InvariantCulture));
 
         return await GetCollectionAsync(route, cancellationToken);
     }
