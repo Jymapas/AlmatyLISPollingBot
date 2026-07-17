@@ -27,6 +27,7 @@ public sealed class StartPollServiceTests
         session.PollMessageId.Should().Be(102);
         session.TelegramPollId.Should().Be("telegram-poll-id");
         session.ScheduledStopAtUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 16, 0, 0, TimeSpan.Zero));
+        session.DesiredTournamentCount.Should().Be(2);
         session.Candidates.Should().ContainSingle();
         session.Candidates[0].IsAvailableAtFirstSlot.Should().BeTrue();
         session.Candidates[0].IsAvailableAtSecondSlot.Should().BeTrue();
@@ -42,6 +43,57 @@ public sealed class StartPollServiceTests
         request.AllowAddingOptions.Should().BeTrue();
         request.CloseDateUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 16, 0, 0, TimeSpan.Zero));
         fixture.ChatBotClient.Alerts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldUseExplicitTargetDateForPollAndStopTime()
+    {
+        var targetDate = new DateOnly(2026, 3, 10);
+        var fixture = new PollFixture(new[] { CreateTournament(targetDate: targetDate) });
+
+        var result = await fixture.CreateService().StartAsync(
+            new StartPollRequest(targetDate, 2),
+            CancellationToken.None);
+
+        result.RejectionReason.Should().BeNull();
+        result.PollSession.Should().NotBeNull();
+        result.PollSession!.TargetDate.Should().Be(targetDate);
+        result.PollSession.DesiredTournamentCount.Should().Be(2);
+        result.PollSession.ScheduledStopAtUtc.Should().Be(new DateTimeOffset(2026, 3, 9, 16, 0, 0, TimeSpan.Zero));
+        fixture.TournamentClient.RequestedTargetDates.Should().ContainSingle().Which.Should().Be(targetDate);
+        fixture.PollPublisher.PollRequests.Should().ContainSingle().Which.Question
+            .Should().Be("Выбираем 2 синхрона на 10.03.2026:");
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldCreateSingleChoicePollWhenOneTournamentIsRequested()
+    {
+        var fixture = new PollFixture(new[] { CreateTournament() });
+
+        var result = await fixture.CreateService().StartAsync(
+            new StartPollRequest(null, 1),
+            CancellationToken.None);
+
+        result.RejectionReason.Should().BeNull();
+        result.PollSession!.DesiredTournamentCount.Should().Be(1);
+        var request = fixture.PollPublisher.PollRequests.Should().ContainSingle().Which;
+        request.Question.Should().Be("Выбираем 1 синхрон на субботу, 07.03.2026:");
+        request.AllowsMultipleAnswers.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldRejectDateWhenAutomaticStopTimeHasPassed()
+    {
+        var fixture = new PollFixture(new[] { CreateTournament() });
+
+        var result = await fixture.CreateService().StartAsync(
+            new StartPollRequest(new DateOnly(2026, 3, 2), 2),
+            CancellationToken.None);
+
+        result.PollSession.Should().BeNull();
+        result.RejectionReason.Should().Be(PollStartRejectionReason.TargetDateAlreadyStopped);
+        fixture.TournamentClient.RequestedTargetDates.Should().BeEmpty();
+        fixture.PollPublisher.PollRequests.Should().BeEmpty();
     }
 
     [Fact]
@@ -152,14 +204,16 @@ public sealed class StartPollServiceTests
         decimal difficulty = 5m,
         int type = 3,
         bool hasRussianLanguage = true,
-        bool hasChgkGgRating = true)
+        bool hasChgkGgRating = true,
+        DateOnly? targetDate = null)
     {
+        var date = targetDate ?? new DateOnly(2026, 3, 7);
         return new TournamentDetails(
             id,
             title,
             type,
-            new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.FromHours(5)),
-            new DateTimeOffset(2026, 3, 7, 16, 0, 0, TimeSpan.FromHours(5)),
+            new DateTimeOffset(date.ToDateTime(new TimeOnly(12, 0)), TimeSpan.FromHours(5)),
+            new DateTimeOffset(date.ToDateTime(new TimeOnly(16, 0)), TimeSpan.FromHours(5)),
             difficulty,
             hasRussianLanguage ? new[] { new TournamentLanguage("ru", "Русский") } : Array.Empty<TournamentLanguage>(),
             hasChgkGgRating ? new[] { "chgkgg" } : Array.Empty<string>(),
@@ -178,11 +232,13 @@ public sealed class StartPollServiceTests
         {
             this.tournaments = tournaments;
             ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds);
+            TournamentClient = new StubTournamentClient(tournaments);
         }
 
         public StubPollPublisher PollPublisher { get; } = new();
         public StubChatBotClient ChatBotClient { get; } = new();
         public StubForcedTournamentRepository ForcedTournamentRepository { get; }
+        public StubTournamentClient TournamentClient { get; }
 
         public StartPollService CreateService()
         {
@@ -192,7 +248,7 @@ public sealed class StartPollServiceTests
                 new StubLookupRepository(),
                 ForcedTournamentRepository,
                 new StubPollSessionRepository(),
-                new StubTournamentClient(tournaments),
+                TournamentClient,
                 new PollCandidateSelectionService(),
                 new TournamentListFormatter(new StubExchangeRateProvider()),
                 PollPublisher,
@@ -282,10 +338,13 @@ public sealed class StartPollServiceTests
             this.tournaments = tournaments;
         }
 
+        public List<DateOnly> RequestedTargetDates { get; } = new();
+
         public Task<IReadOnlyCollection<TournamentDetails>> GetTournamentsIntersectingDateAsync(
             DateOnly targetDate,
             CancellationToken cancellationToken)
         {
+            RequestedTargetDates.Add(targetDate);
             return Task.FromResult(tournaments);
         }
 

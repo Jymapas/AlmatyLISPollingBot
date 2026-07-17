@@ -211,8 +211,30 @@ public sealed class TelegramUpdateRouter
                 return;
             }
 
-            await startPollService.StartAsync(cancellationToken);
-            logger.LogInformation("Received /poll command.");
+            var requestParseResult = StartPollRequestParser.Parse(GetCommandPayload(messageText));
+            if (!requestParseResult.IsValid)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Используйте: /poll, /poll 1, /poll дд.мм.гггг или /poll дд.мм.гггг 1.",
+                    cancellationToken);
+                return;
+            }
+
+            var result = await startPollService.StartAsync(requestParseResult.Request!, cancellationToken);
+            if (result.RejectionReason == PollStartRejectionReason.TargetDateAlreadyStopped)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Нельзя создать опрос: время его автоматической остановки для этой даты уже прошло.",
+                    cancellationToken);
+                return;
+            }
+
+            logger.LogInformation(
+                "Received /poll command. Target date: {TargetDate}; desired tournament count: {DesiredTournamentCount}.",
+                requestParseResult.Request!.TargetDate,
+                requestParseResult.Request.DesiredTournamentCount);
             return;
         }
 

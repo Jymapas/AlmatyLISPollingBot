@@ -1,3 +1,4 @@
+using AlmatyLISPollingBot.Domain.Common;
 using AlmatyLISPollingBot.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -62,6 +63,7 @@ public sealed class BotDbContext : DbContext
         modelBuilder.Entity<PollSession>(entity =>
         {
             entity.ToTable("poll_sessions");
+            entity.Property(x => x.DesiredTournamentCount).HasDefaultValue(PollRules.DefaultDesiredTournamentCount);
             entity.HasMany(x => x.Candidates)
                 .WithOne()
                 .HasForeignKey(x => x.PollSessionId);

@@ -5,6 +5,8 @@ public static class PollRules
     public const int MaxPollOptions = 10;
     public const int ResultOptionSlots = 1;
     public const int MaxTournamentOptions = MaxPollOptions - ResultOptionSlots;
+    public const int SingleTournamentCount = 1;
+    public const int DefaultDesiredTournamentCount = 2;
     public const int PollStopDaysBeforeTargetDate = 1;
     public const string ResultsOptionTitle = "посмотреть результаты";
     public static readonly TimeSpan SlotUtcOffset = TimeSpan.FromHours(5);
@@ -22,6 +24,16 @@ public static class PollRules
     public static bool IsSupportedTournamentType(int tournamentType)
     {
         return SupportedTournamentTypesInternal.Contains(tournamentType);
+    }
+
+    public static bool IsSupportedDesiredTournamentCount(int desiredTournamentCount)
+    {
+        return desiredTournamentCount is SingleTournamentCount or DefaultDesiredTournamentCount;
+    }
+
+    public static bool AllowsMultipleAnswers(int desiredTournamentCount)
+    {
+        return desiredTournamentCount != SingleTournamentCount;
     }
 
     public static DateTimeOffset GetSlotStart(DateOnly targetDate, TimeOnly slotTime)

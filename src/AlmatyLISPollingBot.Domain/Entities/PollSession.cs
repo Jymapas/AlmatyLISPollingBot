@@ -6,6 +6,7 @@ namespace AlmatyLISPollingBot.Domain.Entities;
 public sealed class PollSession : Entity
 {
     public DateOnly TargetDate { get; set; }
+    public int DesiredTournamentCount { get; set; } = PollRules.DefaultDesiredTournamentCount;
     public PollLifecycleStatus Status { get; set; } = PollLifecycleStatus.Draft;
     public long ChatId { get; set; }
     public string? TelegramPollId { get; set; }

@@ -198,6 +198,11 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
                     b.Property<long>("ChatId")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("DesiredTournamentCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(2);
+
                     b.Property<int?>("ListMessageId")
                         .HasColumnType("integer");
 
