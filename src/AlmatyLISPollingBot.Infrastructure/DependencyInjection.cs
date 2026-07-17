@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IPollSessionRepository, PollSessionRepository>();
         services.AddScoped<IReadOnlyLookupRepository, LookupRepository>();
         services.AddScoped<IExcludedTournamentRepository, ExcludedTournamentRepository>();
+        services.AddScoped<IForcedTournamentRepository, ForcedTournamentRepository>();
         services.AddScoped<IChatAdministratorRepository, ChatAdministratorRepository>();
         services.AddScoped<ICurrencyExchangeRateRepository, CurrencyExchangeRateRepository>();
 

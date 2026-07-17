@@ -5,7 +5,7 @@
       "name": "AlmatyLISPollingBot.Worker (Local)",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/src/AlmatyLISPollingBot.Worker/bin/Debug/net8.0/AlmatyLISPollingBot.Worker.dll",
+      "program": "${workspaceFolder}/src/AlmatyLISPollingBot.Worker/bin/Debug/net10.0/AlmatyLISPollingBot.Worker.dll",
       "args": [],
       "cwd": "${workspaceFolder}/src/AlmatyLISPollingBot.Worker",
       "stopAtEntry": false,

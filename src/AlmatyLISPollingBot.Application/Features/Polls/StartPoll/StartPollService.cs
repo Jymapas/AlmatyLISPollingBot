@@ -17,6 +17,7 @@ public sealed class StartPollService
     private readonly IClock clock;
     private readonly IBotSettingsRepository settingsRepository;
     private readonly IReadOnlyLookupRepository lookupRepository;
+    private readonly IForcedTournamentRepository forcedTournamentRepository;
     private readonly IPollSessionRepository pollSessionRepository;
     private readonly IChgkTournamentClient tournamentClient;
     private readonly PollCandidateSelectionService candidateSelectionService;
@@ -28,6 +29,7 @@ public sealed class StartPollService
         IClock clock,
         IBotSettingsRepository settingsRepository,
         IReadOnlyLookupRepository lookupRepository,
+        IForcedTournamentRepository forcedTournamentRepository,
         IPollSessionRepository pollSessionRepository,
         IChgkTournamentClient tournamentClient,
         PollCandidateSelectionService candidateSelectionService,
@@ -38,6 +40,7 @@ public sealed class StartPollService
         this.clock = clock;
         this.settingsRepository = settingsRepository;
         this.lookupRepository = lookupRepository;
+        this.forcedTournamentRepository = forcedTournamentRepository;
         this.pollSessionRepository = pollSessionRepository;
         this.tournamentClient = tournamentClient;
         this.candidateSelectionService = candidateSelectionService;
@@ -54,16 +57,37 @@ public sealed class StartPollService
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.ApplicationTimeZone);
         var targetDate = TargetDateCalculator.GetNextSaturday(clock.UtcNow, timeZone);
         var excludedIdsTask = lookupRepository.GetExcludedTournamentIdsAsync(cancellationToken);
+        var forcedTournamentsTask = forcedTournamentRepository.GetQueuedAsync(cancellationToken);
         var tournamentsTask = tournamentClient.GetTournamentsIntersectingDateAsync(targetDate, cancellationToken);
-        await Task.WhenAll(excludedIdsTask, tournamentsTask);
+        await Task.WhenAll(excludedIdsTask, forcedTournamentsTask, tournamentsTask);
         var excludedIds = await excludedIdsTask;
+        var forcedTournaments = await forcedTournamentsTask;
         var tournaments = await tournamentsTask;
 
-        var candidates = candidateSelectionService.SelectCandidates(
+        var forcedCandidates = candidateSelectionService.SelectForcedCandidates(
             tournaments,
             targetDate,
-            excludedIds);
-        if (candidates.Count == 0)
+            forcedTournaments.Select(x => x.TournamentId).ToArray());
+        if (forcedCandidates.Count > PollRules.MaxTournamentOptions)
+        {
+            await chatBotClient.SendMainAdminAlertAsync(
+                $"Невозможно создать опрос на {targetDate:dd.MM.yyyy}: доступно {forcedCandidates.Count} принудительно добавленных синхронов, а лимит — {PollRules.MaxTournamentOptions}.",
+                cancellationToken);
+            return null;
+        }
+
+        var forcedTournamentIds = forcedCandidates.Select(x => x.Tournament.Id).ToHashSet();
+        var regularCandidates = candidateSelectionService.SelectCandidates(
+            tournaments,
+            targetDate,
+            excludedIds)
+            .Where(x => !forcedTournamentIds.Contains(x.Tournament.Id))
+            .Take(PollRules.MaxTournamentOptions - forcedCandidates.Count);
+        var candidates = forcedCandidates
+            .Concat(regularCandidates)
+            .Select((candidate, index) => candidate with { SortOrder = index })
+            .ToArray();
+        if (candidates.Length == 0)
         {
             await chatBotClient.SendMainAdminAlertAsync(
                 $"Не найдено подходящих синхронов для опроса на {targetDate:dd.MM.yyyy}.",
@@ -101,6 +125,7 @@ public sealed class StartPollService
                 publishedPoll,
                 candidates);
             await pollSessionRepository.AddAsync(pollSession, cancellationToken);
+            await forcedTournamentRepository.RemoveAsync(forcedTournamentIds, cancellationToken);
             await pollSessionRepository.SaveChangesAsync(cancellationToken);
 
             if (formattingResult.HasUnconvertedPrices)

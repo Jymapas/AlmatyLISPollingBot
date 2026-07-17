@@ -13,6 +13,7 @@ public sealed class BotDbContext : DbContext
     public DbSet<BotSettings> BotSettings => Set<BotSettings>();
     public DbSet<ChatAdministrator> ChatAdministrators => Set<ChatAdministrator>();
     public DbSet<ExcludedTournament> ExcludedTournaments => Set<ExcludedTournament>();
+    public DbSet<ForcedTournament> ForcedTournaments => Set<ForcedTournament>();
     public DbSet<ShadowBannedUser> ShadowBannedUsers => Set<ShadowBannedUser>();
     public DbSet<TournamentHistoryEntry> TournamentHistoryEntries => Set<TournamentHistoryEntry>();
     public DbSet<PollSession> PollSessions => Set<PollSession>();
@@ -37,6 +38,12 @@ public sealed class BotDbContext : DbContext
         modelBuilder.Entity<ExcludedTournament>(entity =>
         {
             entity.ToTable("excluded_tournaments");
+            entity.HasIndex(x => x.TournamentId).IsUnique();
+        });
+
+        modelBuilder.Entity<ForcedTournament>(entity =>
+        {
+            entity.ToTable("forced_tournaments");
             entity.HasIndex(x => x.TournamentId).IsUnique();
         });
 

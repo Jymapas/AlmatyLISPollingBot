@@ -6,9 +6,11 @@ using AlmatyLISPollingBot.Application.Features.MakePost;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
 using AlmatyLISPollingBot.Infrastructure;
+using AlmatyLISPollingBot.Infrastructure.Persistence;
 using AlmatyLISPollingBot.Worker.Configuration;
 using AlmatyLISPollingBot.Worker.HostedServices;
 using AlmatyLISPollingBot.Worker.Telegram;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
@@ -42,15 +44,24 @@ builder.Services.AddScoped<StartPollService>();
 builder.Services.AddScoped<StopPollService>();
 builder.Services.AddScoped<MakePostService>();
 builder.Services.AddScoped<TelegramUpdateRouter>();
-builder.Services.AddSingleton<IExcludeDialogState, InMemoryExcludeDialogState>();
+builder.Services.AddSingleton<IPrivateAdminDialogState, InMemoryPrivateAdminDialogState>();
 builder.Services.AddScoped<IChatBotClient, TelegramMainAdminClient>();
 builder.Services.AddScoped<IPollPublisher, TelegramPollPublisher>();
 builder.Services.AddScoped<IChatAdministratorClient, TelegramChatAdministratorClient>();
 
 builder.Services.AddHostedService<BotSettingsInitializationService>();
 builder.Services.AddHostedService<AdminSyncSchedulerService>();
-builder.Services.AddHostedService<TelegramCommandMenuInitializationService>();
+builder.Services.AddSingleton<TelegramCommandMenuInitializationService>();
+builder.Services.AddHostedService(serviceProvider =>
+    serviceProvider.GetRequiredService<TelegramCommandMenuInitializationService>());
 builder.Services.AddHostedService<TelegramLongPollingService>();
 
 var host = builder.Build();
+
+await using (var scope = host.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+
 await host.RunAsync();

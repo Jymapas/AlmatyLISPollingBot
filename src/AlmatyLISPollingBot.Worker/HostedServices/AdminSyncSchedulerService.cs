@@ -41,13 +41,13 @@ public sealed class AdminSyncSchedulerService : BackgroundService
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
-            var adminSyncService = scope.ServiceProvider.GetRequiredService<AdminSyncService>();
-            await adminSyncService.SynchronizeAsync(botConfiguration.Value.TargetChatId, cancellationToken);
-            logger.LogInformation("Chat administrator cache synchronized.");
+            var updateSettingsService = scope.ServiceProvider.GetRequiredService<UpdateSettingsService>();
+            await updateSettingsService.ExecuteAsync(botConfiguration.Value, cancellationToken);
+            logger.LogInformation("Bot settings and chat administrator cache synchronized.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            logger.LogError(exception, "Failed to synchronize chat administrator cache.");
+            logger.LogError(exception, "Failed to synchronize bot settings and chat administrator cache.");
         }
     }
 

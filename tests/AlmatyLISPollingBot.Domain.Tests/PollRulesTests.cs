@@ -6,11 +6,11 @@ namespace AlmatyLISPollingBot.Domain.Tests;
 public sealed class PollRulesTests
 {
     [Fact]
-    public void GetPollStopAt_ShouldReturnThursdayBeforeTargetSaturdayInAlmatyTime()
+    public void GetPollStopAt_ShouldReturnFridayBeforeTargetSaturdayInAlmatyTime()
     {
         var stopAt = PollRules.GetPollStopAt(new DateOnly(2026, 3, 7), new TimeOnly(21, 0));
 
-        stopAt.Should().Be(new DateTimeOffset(2026, 3, 5, 21, 0, 0, TimeSpan.FromHours(5)));
+        stopAt.Should().Be(new DateTimeOffset(2026, 3, 6, 21, 0, 0, TimeSpan.FromHours(5)));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using AlmatyLISPollingBot.Application.Features.Administrators;
 using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
+using AlmatyLISPollingBot.Application.Features.ForcedTournaments;
 using AlmatyLISPollingBot.Application.Features.Polls.Options;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,10 @@ public static class DependencyInjection
         services.AddScoped<ListTournamentOptionsService>();
         services.AddScoped<PollCommandAuthorizer>();
         services.AddScoped<AdminSyncService>();
+        services.AddScoped<BotSettingsSyncService>();
+        services.AddScoped<UpdateSettingsService>();
         services.AddScoped<ExcludeTournamentsService>();
+        services.AddScoped<ForceTournamentsService>();
 
         return services;
     }

@@ -126,6 +126,26 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
                     b.ToTable("excluded_tournaments", (string)null);
                 });
 
+            modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.ForcedTournament", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("QueuedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TournamentId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TournamentId")
+                        .IsUnique();
+
+                    b.ToTable("forced_tournaments", (string)null);
+                });
+
             modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollCandidate", b =>
                 {
                     b.Property<Guid>("Id")
