@@ -217,6 +217,56 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
+        if (await IsBotCommandAsync(messageText, BotCommands.Excluded, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            TournamentOptionsResult result;
+            try
+            {
+                result = await listTournamentOptionsService.ExecuteExcludedAsync(cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Could not list excluded tournaments for Telegram user {TelegramUserId} in chat {ChatId}.",
+                    user.Id,
+                    message.Chat.Id);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Не удалось загрузить исключённые турниры. Попробуйте ещё раз позже.",
+                    cancellationToken);
+                return;
+            }
+
+            if (result.Pages.Count == 0)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    $"Не найдено исключённых турниров на {result.TargetDate:dd.MM.yyyy}.",
+                    cancellationToken);
+            }
+            else
+            {
+                foreach (var page in result.Pages)
+                {
+                    await SendHtmlPrivateMessageAsync(message.Chat.Id, page, cancellationToken);
+                }
+            }
+
+            logger.LogInformation(
+                "Listed {PageCount} pages of excluded tournaments for Telegram user {TelegramUserId} in chat {ChatId}.",
+                result.Pages.Count,
+                user.Id,
+                message.Chat.Id);
+            return;
+        }
+
         if (await IsBotCommandAsync(messageText, BotCommands.Stop, cancellationToken))
         {
             if (!await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))

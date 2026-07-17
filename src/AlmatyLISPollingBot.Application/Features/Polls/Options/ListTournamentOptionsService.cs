@@ -33,6 +33,18 @@ public sealed class ListTournamentOptionsService
 
     public async Task<TournamentOptionsResult> ExecuteAsync(CancellationToken cancellationToken)
     {
+        return await ExecuteAsync(onlyExcluded: false, cancellationToken);
+    }
+
+    public async Task<TournamentOptionsResult> ExecuteExcludedAsync(CancellationToken cancellationToken)
+    {
+        return await ExecuteAsync(onlyExcluded: true, cancellationToken);
+    }
+
+    private async Task<TournamentOptionsResult> ExecuteAsync(
+        bool onlyExcluded,
+        CancellationToken cancellationToken)
+    {
         var settings = await settingsRepository.GetAsync(cancellationToken)
             ?? throw new InvalidOperationException("Bot settings are not initialized.");
 
@@ -46,6 +58,12 @@ public sealed class ListTournamentOptionsService
             await tournamentsTask,
             targetDate,
             await excludedIdsTask);
+
+        if (onlyExcluded)
+        {
+            candidates = candidates.Where(x => x.IsExcluded).ToArray();
+        }
+
         var formattingResult = await tournamentListFormatter.FormatAsync(candidates, cancellationToken);
 
         return new TournamentOptionsResult(targetDate, formattingResult.Pages);

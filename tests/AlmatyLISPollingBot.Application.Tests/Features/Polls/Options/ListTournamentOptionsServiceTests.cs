@@ -43,6 +43,40 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ExecuteExcludedAsync_ShouldListOnlyExcludedEligibleTournaments()
+    {
+        var tournaments = new[]
+        {
+            CreateTournament(1, "Обычный", 4m),
+            CreateTournament(2, "Исключённый", 5m),
+            CreateTournament(3, "Неподходящий", 6m, type: 8)
+        };
+        var sut = CreateService(tournaments, excludedTournamentIds: new[] { 2, 3 });
+
+        var result = await sut.ExecuteExcludedAsync(CancellationToken.None);
+
+        result.TargetDate.Should().Be(new DateOnly(2026, 3, 7));
+        result.Pages.Should().ContainSingle();
+        result.Pages[0].Should().Contain("<b>Исключённый</b>");
+        result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
+        result.Pages[0].Should().NotContain("Обычный");
+        result.Pages[0].Should().NotContain("Неподходящий");
+    }
+
+    [Fact]
+    public async Task ExecuteExcludedAsync_ShouldReturnNoPagesWhenNoExcludedEligibleTournamentsExist()
+    {
+        var sut = CreateService(
+            new[] { CreateTournament(1, "Обычный", 4m) },
+            excludedTournamentIds: new[] { 2 });
+
+        var result = await sut.ExecuteExcludedAsync(CancellationToken.None);
+
+        result.TargetDate.Should().Be(new DateOnly(2026, 3, 7));
+        result.Pages.Should().BeEmpty();
+    }
+
     private static ListTournamentOptionsService CreateService(
         IReadOnlyCollection<TournamentDetails> tournaments,
         IReadOnlyCollection<int> excludedTournamentIds)
@@ -56,12 +90,12 @@ public sealed class ListTournamentOptionsServiceTests
             new TournamentListFormatter(new StubExchangeRateProvider()));
     }
 
-    private static TournamentDetails CreateTournament(int id, string title, decimal difficulty)
+    private static TournamentDetails CreateTournament(int id, string title, decimal difficulty, int type = 3)
     {
         return new TournamentDetails(
             id,
             title,
-            3,
+            type,
             new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.FromHours(5)),
             new DateTimeOffset(2026, 3, 7, 16, 0, 0, TimeSpan.FromHours(5)),
             difficulty,
