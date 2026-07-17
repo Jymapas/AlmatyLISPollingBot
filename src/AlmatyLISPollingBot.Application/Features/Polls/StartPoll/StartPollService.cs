@@ -1,9 +1,7 @@
 using AlmatyLISPollingBot.Application.Abstractions.Clock;
 using AlmatyLISPollingBot.Application.Abstractions.Messaging;
 using AlmatyLISPollingBot.Application.Abstractions.Persistence;
-using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Polls;
-using AlmatyLISPollingBot.Application.Features.Common;
 using AlmatyLISPollingBot.Domain.Entities;
 using AlmatyLISPollingBot.Domain.Enums;
 using AlmatyLISPollingBot.Domain.Common;
@@ -13,35 +11,26 @@ namespace AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 public sealed class StartPollService
 {
     private readonly IClock clock;
-    private readonly IBotSettingsRepository settingsRepository;
-    private readonly IReadOnlyLookupRepository lookupRepository;
     private readonly IForcedTournamentRepository forcedTournamentRepository;
     private readonly IPollSessionRepository pollSessionRepository;
-    private readonly IChgkTournamentClient tournamentClient;
-    private readonly PollCandidateSelectionService candidateSelectionService;
+    private readonly PollCandidatePreparationService candidatePreparationService;
     private readonly TournamentListFormatter tournamentListFormatter;
     private readonly IPollPublisher pollPublisher;
     private readonly IChatBotClient chatBotClient;
 
     public StartPollService(
         IClock clock,
-        IBotSettingsRepository settingsRepository,
-        IReadOnlyLookupRepository lookupRepository,
         IForcedTournamentRepository forcedTournamentRepository,
         IPollSessionRepository pollSessionRepository,
-        IChgkTournamentClient tournamentClient,
-        PollCandidateSelectionService candidateSelectionService,
+        PollCandidatePreparationService candidatePreparationService,
         TournamentListFormatter tournamentListFormatter,
         IPollPublisher pollPublisher,
         IChatBotClient chatBotClient)
     {
         this.clock = clock;
-        this.settingsRepository = settingsRepository;
-        this.lookupRepository = lookupRepository;
         this.forcedTournamentRepository = forcedTournamentRepository;
         this.pollSessionRepository = pollSessionRepository;
-        this.tournamentClient = tournamentClient;
-        this.candidateSelectionService = candidateSelectionService;
+        this.candidatePreparationService = candidatePreparationService;
         this.tournamentListFormatter = tournamentListFormatter;
         this.pollPublisher = pollPublisher;
         this.chatBotClient = chatBotClient;
@@ -57,64 +46,32 @@ public sealed class StartPollService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (!PollRules.IsSupportedDesiredTournamentCount(request.DesiredTournamentCount))
+        var preparationResult = await candidatePreparationService.PrepareAsync(request, cancellationToken);
+        switch (preparationResult.RejectionReason)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                request.DesiredTournamentCount,
-                "Only one or two desired tournaments are supported.");
+            case null:
+                break;
+            case PollCandidatePreparationRejectionReason.TargetDateAlreadyStopped:
+                return new StartPollResult(null, PollStartRejectionReason.TargetDateAlreadyStopped);
+            case PollCandidatePreparationRejectionReason.TooManyForcedCandidates:
+                await chatBotClient.SendMainAdminAlertAsync(
+                    $"Невозможно создать опрос на {preparationResult.TargetDate:dd.MM.yyyy}: доступно {preparationResult.ForcedCandidateCount} принудительно добавленных синхронов, а лимит — {PollRules.MaxTournamentOptions}.",
+                    cancellationToken);
+                return new StartPollResult(null, null);
+            case PollCandidatePreparationRejectionReason.NoCandidates:
+                await chatBotClient.SendMainAdminAlertAsync(
+                    $"Не найдено подходящих синхронов для опроса на {preparationResult.TargetDate:dd.MM.yyyy}.",
+                    cancellationToken);
+                return new StartPollResult(null, null);
+            default:
+                throw new InvalidOperationException("Unsupported poll candidate preparation result.");
         }
 
-        var settings = await settingsRepository.GetAsync(cancellationToken)
-            ?? throw new InvalidOperationException("Bot settings are not initialized.");
-
-        var timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.ApplicationTimeZone);
-        var targetDate = request.TargetDate ?? TargetDateCalculator.GetNextSaturday(clock.UtcNow, timeZone);
-        var stopAtUtc = PollRules.GetPollStopAt(targetDate, settings.DefaultPollStopTime).ToUniversalTime();
-        if (stopAtUtc <= clock.UtcNow)
-        {
-            return new StartPollResult(null, PollStartRejectionReason.TargetDateAlreadyStopped);
-        }
-
-        var excludedIdsTask = lookupRepository.GetExcludedTournamentIdsAsync(cancellationToken);
-        var forcedTournamentsTask = forcedTournamentRepository.GetQueuedAsync(cancellationToken);
-        var tournamentsTask = tournamentClient.GetTournamentsIntersectingDateAsync(targetDate, cancellationToken);
-        await Task.WhenAll(excludedIdsTask, forcedTournamentsTask, tournamentsTask);
-        var excludedIds = await excludedIdsTask;
-        var forcedTournaments = await forcedTournamentsTask;
-        var tournaments = await tournamentsTask;
-
-        var forcedCandidates = candidateSelectionService.SelectForcedCandidates(
-            tournaments,
-            targetDate,
-            forcedTournaments.Select(x => x.TournamentId).ToArray());
-        if (forcedCandidates.Count > PollRules.MaxTournamentOptions)
-        {
-            await chatBotClient.SendMainAdminAlertAsync(
-                $"Невозможно создать опрос на {targetDate:dd.MM.yyyy}: доступно {forcedCandidates.Count} принудительно добавленных синхронов, а лимит — {PollRules.MaxTournamentOptions}.",
-                cancellationToken);
-            return new StartPollResult(null, null);
-        }
-
-        var forcedTournamentIds = forcedCandidates.Select(x => x.Tournament.Id).ToHashSet();
-        var regularCandidates = candidateSelectionService.SelectCandidates(
-            tournaments,
-            targetDate,
-            excludedIds)
-            .Where(x => !forcedTournamentIds.Contains(x.Tournament.Id))
-            .Take(PollRules.MaxTournamentOptions - forcedCandidates.Count);
-        var candidates = forcedCandidates
-            .Concat(regularCandidates)
-            .Select((candidate, index) => candidate with { SortOrder = index })
-            .ToArray();
-        if (candidates.Length == 0)
-        {
-            await chatBotClient.SendMainAdminAlertAsync(
-                $"Не найдено подходящих синхронов для опроса на {targetDate:dd.MM.yyyy}.",
-                cancellationToken);
-            return new StartPollResult(null, null);
-        }
-
+        var settings = preparationResult.Settings;
+        var targetDate = preparationResult.TargetDate;
+        var stopAtUtc = preparationResult.StopAtUtc;
+        var candidates = preparationResult.Candidates;
+        var forcedTournamentIds = preparationResult.IncludedForcedTournamentIds;
         var formattingResult = await tournamentListFormatter.FormatAsync(
             candidates,
             TournamentIdDisplayMode.WithoutTournamentId,

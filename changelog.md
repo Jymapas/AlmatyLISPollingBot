@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Process-wide rate limiting of CHGK API requests to two per second, including retries.
 - Tournament IDs are hidden from poll announcements and `/excluded`, while retained in `/options`.
 - `/options` now shows only the primary tournament price to keep its messages compact.
+- Private admin command `/preview` for a side-effect-free preview of the next poll candidates, accounting for force and exclude.
 
 ## [0.1.0] - 2026-07-17
 

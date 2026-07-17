@@ -252,14 +252,18 @@ public sealed class StartPollServiceTests
 
         public StartPollService CreateService()
         {
+            var clock = new StubClock();
             return new StartPollService(
-                new StubClock(),
-                new StubSettingsRepository(),
-                new StubLookupRepository(),
+                clock,
                 ForcedTournamentRepository,
                 new StubPollSessionRepository(),
-                TournamentClient,
-                new PollCandidateSelectionService(),
+                new PollCandidatePreparationService(
+                    clock,
+                    new StubSettingsRepository(),
+                    new StubLookupRepository(),
+                    ForcedTournamentRepository,
+                    TournamentClient,
+                    new PollCandidateSelectionService()),
                 new TournamentListFormatter(new StubExchangeRateProvider()),
                 PollPublisher,
                 ChatBotClient);

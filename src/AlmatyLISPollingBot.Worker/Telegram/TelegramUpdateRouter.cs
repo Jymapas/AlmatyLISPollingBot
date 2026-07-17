@@ -3,12 +3,14 @@ using AlmatyLISPollingBot.Application.Features.Administrators;
 using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
 using AlmatyLISPollingBot.Application.Features.ForcedTournaments;
 using AlmatyLISPollingBot.Application.Features.Polls.Options;
+using AlmatyLISPollingBot.Application.Features.Polls.Preview;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Application.Contracts.Polls;
+using AlmatyLISPollingBot.Domain.Common;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -22,6 +24,7 @@ public sealed class TelegramUpdateRouter
     private const int TelegramMessageMaxLength = 4096;
 
     private readonly StartPollService startPollService;
+    private readonly PreviewPollService previewPollService;
     private readonly ListTournamentOptionsService listTournamentOptionsService;
     private readonly StopPollService stopPollService;
     private readonly MakePostService makePostService;
@@ -39,6 +42,7 @@ public sealed class TelegramUpdateRouter
 
     public TelegramUpdateRouter(
         StartPollService startPollService,
+        PreviewPollService previewPollService,
         ListTournamentOptionsService listTournamentOptionsService,
         StopPollService stopPollService,
         MakePostService makePostService,
@@ -55,6 +59,7 @@ public sealed class TelegramUpdateRouter
         ILogger<TelegramUpdateRouter> logger)
     {
         this.startPollService = startPollService;
+        this.previewPollService = previewPollService;
         this.listTournamentOptionsService = listTournamentOptionsService;
         this.stopPollService = stopPollService;
         this.makePostService = makePostService;
@@ -235,6 +240,96 @@ public sealed class TelegramUpdateRouter
                 "Received /poll command. Target date: {TargetDate}; desired tournament count: {DesiredTournamentCount}.",
                 requestParseResult.Request!.TargetDate,
                 requestParseResult.Request.DesiredTournamentCount);
+            return;
+        }
+
+        if (await IsBotCommandAsync(messageText, BotCommands.Preview, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            var requestParseResult = StartPollRequestParser.Parse(GetCommandPayload(messageText));
+            if (!requestParseResult.IsValid)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Используйте: /preview, /preview 1, /preview дд.мм.гггг или /preview дд.мм.гггг 1.",
+                    cancellationToken);
+                return;
+            }
+
+            PollPreviewResult result;
+            try
+            {
+                result = await previewPollService.ExecuteAsync(requestParseResult.Request!, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Could not create poll preview for Telegram user {TelegramUserId} in chat {ChatId}.",
+                    user.Id,
+                    message.Chat.Id);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Не удалось сформировать предпросмотр опроса. Попробуйте ещё раз позже.",
+                    cancellationToken);
+                return;
+            }
+
+            switch (result.RejectionReason)
+            {
+                case null:
+                    break;
+                case PollCandidatePreparationRejectionReason.TargetDateAlreadyStopped:
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        "Нельзя сформировать предпросмотр: время автоматической остановки для этой даты уже прошло.",
+                        cancellationToken);
+                    return;
+                case PollCandidatePreparationRejectionReason.TooManyForcedCandidates:
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        $"Невозможно сформировать опрос на {result.TargetDate:dd.MM.yyyy}: доступно {result.ForcedCandidateCount} принудительно добавленных синхронов, а лимит — {PollRules.MaxTournamentOptions}.",
+                        cancellationToken);
+                    return;
+                case PollCandidatePreparationRejectionReason.NoCandidates:
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        $"Не найдено подходящих синхронов для опроса на {result.TargetDate:dd.MM.yyyy}.",
+                        cancellationToken);
+                    return;
+                default:
+                    logger.LogError(
+                        "Unsupported poll preview rejection reason {RejectionReason} for Telegram user {TelegramUserId} in chat {ChatId}.",
+                        result.RejectionReason,
+                        user.Id,
+                        message.Chat.Id);
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        "Не удалось сформировать предпросмотр опроса. Попробуйте ещё раз позже.",
+                        cancellationToken);
+                    return;
+            }
+
+            await SendPrivateMessageAsync(
+                message.Chat.Id,
+                $"Предпросмотр опроса на {result.TargetDate:dd.MM.yyyy} (состояние на сейчас). В Telegram poll также будет вариант «посмотреть результаты».",
+                cancellationToken);
+            foreach (var page in result.Pages)
+            {
+                await SendHtmlPrivateMessageAsync(message.Chat.Id, page, cancellationToken);
+            }
+
+            logger.LogInformation(
+                "Created poll preview for Telegram user {TelegramUserId} in chat {ChatId}. Target date: {TargetDate}; candidate page count: {PageCount}.",
+                user.Id,
+                message.Chat.Id,
+                result.TargetDate,
+                result.Pages.Count);
             return;
         }
 
