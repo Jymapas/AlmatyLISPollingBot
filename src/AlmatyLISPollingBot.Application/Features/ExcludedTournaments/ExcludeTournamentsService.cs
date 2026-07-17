@@ -19,7 +19,7 @@ public sealed class ExcludeTournamentsService
             return parsedResult;
         }
 
-        var addedIds = await excludedTournamentRepository.AddMissingAsync(
+        var addedIds = await excludedTournamentRepository.AddOrReactivateAsync(
             parsedResult.AddedTournamentIds,
             cancellationToken);
         var alreadyExcludedIds = parsedResult.AddedTournamentIds.Except(addedIds).ToArray();

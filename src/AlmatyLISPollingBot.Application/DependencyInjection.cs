@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddScoped<BotSettingsSyncService>();
         services.AddScoped<UpdateSettingsService>();
         services.AddScoped<ExcludeTournamentsService>();
+        services.AddScoped<UnexcludeTournamentsService>();
         services.AddScoped<ForceTournamentsService>();
 
         return services;

@@ -38,6 +38,7 @@ public sealed class BotDbContext : DbContext
         modelBuilder.Entity<ExcludedTournament>(entity =>
         {
             entity.ToTable("excluded_tournaments");
+            entity.Property(x => x.IsDeleted).HasDefaultValue(false);
             entity.HasIndex(x => x.TournamentId).IsUnique();
         });
 

@@ -26,6 +26,7 @@ public sealed class TelegramUpdateRouter
     private readonly StopPollService stopPollService;
     private readonly MakePostService makePostService;
     private readonly ExcludeTournamentsService excludeTournamentsService;
+    private readonly UnexcludeTournamentsService unexcludeTournamentsService;
     private readonly ForceTournamentsService forceTournamentsService;
     private readonly UpdateSettingsService updateSettingsService;
     private readonly PollCommandAuthorizer pollCommandAuthorizer;
@@ -42,6 +43,7 @@ public sealed class TelegramUpdateRouter
         StopPollService stopPollService,
         MakePostService makePostService,
         ExcludeTournamentsService excludeTournamentsService,
+        UnexcludeTournamentsService unexcludeTournamentsService,
         ForceTournamentsService forceTournamentsService,
         UpdateSettingsService updateSettingsService,
         PollCommandAuthorizer pollCommandAuthorizer,
@@ -57,6 +59,7 @@ public sealed class TelegramUpdateRouter
         this.stopPollService = stopPollService;
         this.makePostService = makePostService;
         this.excludeTournamentsService = excludeTournamentsService;
+        this.unexcludeTournamentsService = unexcludeTournamentsService;
         this.forceTournamentsService = forceTournamentsService;
         this.updateSettingsService = updateSettingsService;
         this.pollCommandAuthorizer = pollCommandAuthorizer;
@@ -158,6 +161,30 @@ public sealed class TelegramUpdateRouter
 
             privateAdminDialogState.Cancel(user.Id);
             await ProcessForcedTournamentsAsync(message.Chat.Id, user.Id, payload, cancellationToken);
+            return;
+        }
+
+        if (await IsBotCommandAsync(messageText, BotCommands.Unexclude, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            var payload = GetCommandPayload(messageText);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                privateAdminDialogState.Start(user.Id, PrivateAdminDialogKind.UnexcludeTournaments);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Перечислите ID или ссылки на турниры, которые нужно вернуть в пул. Для отмены отправьте /cancel.",
+                    cancellationToken);
+                return;
+            }
+
+            privateAdminDialogState.Cancel(user.Id);
+            await ProcessUnexclusionAsync(message.Chat.Id, user.Id, payload, cancellationToken);
             return;
         }
 
@@ -304,6 +331,9 @@ public sealed class TelegramUpdateRouter
             case PrivateAdminDialogKind.ExcludeTournaments:
                 await ProcessExclusionAsync(message.Chat.Id, user.Id, messageText, cancellationToken);
                 break;
+            case PrivateAdminDialogKind.UnexcludeTournaments:
+                await ProcessUnexclusionAsync(message.Chat.Id, user.Id, messageText, cancellationToken);
+                break;
             case PrivateAdminDialogKind.ForceTournaments:
                 await ProcessForcedTournamentsAsync(message.Chat.Id, user.Id, messageText, cancellationToken);
                 break;
@@ -346,6 +376,44 @@ public sealed class TelegramUpdateRouter
             chatId,
             result.AddedTournamentIds.Count,
             result.AlreadyExcludedTournamentIds.Count);
+    }
+
+    private async Task ProcessUnexclusionAsync(
+        long chatId,
+        long userId,
+        string input,
+        CancellationToken cancellationToken)
+    {
+        var result = await unexcludeTournamentsService.ExecuteAsync(input, cancellationToken);
+        if (!result.IsValid)
+        {
+            var errorMessage = result.IsEmptyInput
+                ? "Укажите хотя бы один ID или ссылку на турнир."
+                : $"Не удалось распознать: {string.Join(", ", result.InvalidTokens)}. Укажите ID или ссылки на турниры.";
+            await SendPrivateMessageAsync(chatId, errorMessage, cancellationToken);
+            logger.LogInformation(
+                "Rejected tournament return input from Telegram user {TelegramUserId} in chat {ChatId}. Invalid token count: {InvalidTokenCount}.",
+                userId,
+                chatId,
+                result.InvalidTokens.Count);
+            return;
+        }
+
+        privateAdminDialogState.Cancel(userId);
+        var tournamentIds = result.ReturnedTournamentIds
+            .Concat(result.AlreadyIncludedTournamentIds)
+            .ToArray();
+        var tournaments = await GetTournamentDetailsAsync(tournamentIds, cancellationToken);
+        await SendHtmlPrivateMessageAsync(
+            chatId,
+            UnexcludeTournamentsResultFormatter.Format(result, tournaments),
+            cancellationToken);
+        logger.LogInformation(
+            "Returned tournaments to the pool for Telegram user {TelegramUserId} in chat {ChatId}. Returned: {ReturnedCount}; already included: {AlreadyIncludedCount}.",
+            userId,
+            chatId,
+            result.ReturnedTournamentIds.Count,
+            result.AlreadyIncludedTournamentIds.Count);
     }
 
     private async Task ProcessForcedTournamentsAsync(
@@ -429,7 +497,7 @@ public sealed class TelegramUpdateRouter
         {
             logger.LogWarning(
                 exception,
-                "Could not load tournament titles for {TournamentCount} excluded tournaments.",
+                "Could not load tournament titles for {TournamentCount} tournaments.",
                 tournamentIds.Count);
             return Array.Empty<TournamentDetails>();
         }
