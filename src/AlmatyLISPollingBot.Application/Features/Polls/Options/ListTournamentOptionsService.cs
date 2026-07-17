@@ -33,16 +33,23 @@ public sealed class ListTournamentOptionsService
 
     public async Task<TournamentOptionsResult> ExecuteAsync(CancellationToken cancellationToken)
     {
-        return await ExecuteAsync(onlyExcluded: false, cancellationToken);
+        return await ExecuteAsync(
+            onlyExcluded: false,
+            TournamentIdDisplayMode.WithTournamentId,
+            cancellationToken);
     }
 
     public async Task<TournamentOptionsResult> ExecuteExcludedAsync(CancellationToken cancellationToken)
     {
-        return await ExecuteAsync(onlyExcluded: true, cancellationToken);
+        return await ExecuteAsync(
+            onlyExcluded: true,
+            TournamentIdDisplayMode.WithoutTournamentId,
+            cancellationToken);
     }
 
     private async Task<TournamentOptionsResult> ExecuteAsync(
         bool onlyExcluded,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
         CancellationToken cancellationToken)
     {
         var settings = await settingsRepository.GetAsync(cancellationToken)
@@ -64,7 +71,10 @@ public sealed class ListTournamentOptionsService
             candidates = candidates.Where(x => x.IsExcluded).ToArray();
         }
 
-        var formattingResult = await tournamentListFormatter.FormatAsync(candidates, cancellationToken);
+        var formattingResult = await tournamentListFormatter.FormatAsync(
+            candidates,
+            tournamentIdDisplayMode,
+            cancellationToken);
 
         return new TournamentOptionsResult(targetDate, formattingResult.Pages);
     }

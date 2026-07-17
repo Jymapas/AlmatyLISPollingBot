@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Private admin command `/unexclude` for returning tournaments to the candidate pool without deleting exclusion history.
 - `/poll` arguments for a specific target date and a single-tournament single-choice poll.
 - Process-wide rate limiting of CHGK API requests to two per second, including retries.
+- Tournament IDs are hidden from poll announcements and `/excluded`, while retained in `/options`.
 
 ## [0.1.0] - 2026-07-17
 

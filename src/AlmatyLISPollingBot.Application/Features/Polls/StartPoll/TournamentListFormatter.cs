@@ -22,9 +22,14 @@ public sealed class TournamentListFormatter
 
     public async Task<TournamentListFormattingResult> FormatAsync(
         IReadOnlyList<PollTournamentCandidate> candidates,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(candidates);
+        if (tournamentIdDisplayMode is not (TournamentIdDisplayMode.WithTournamentId or TournamentIdDisplayMode.WithoutTournamentId))
+        {
+            throw new ArgumentOutOfRangeException(nameof(tournamentIdDisplayMode), tournamentIdDisplayMode, "Unsupported tournament ID display mode.");
+        }
 
         var selectedCurrencies = candidates
             .Select(x => SelectPaymentCategories(x.Tournament))
@@ -50,6 +55,7 @@ public sealed class TournamentListFormatter
                 index,
                 SelectPaymentCategories(candidate.Tournament),
                 rates,
+                tournamentIdDisplayMode,
                 ref hasUnconvertedPrices));
         }
 
@@ -61,6 +67,7 @@ public sealed class TournamentListFormatter
         int index,
         IReadOnlyList<TournamentPaymentCategory> paymentCategories,
         IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
         ref bool hasUnconvertedPrices)
     {
         var tournament = candidate.Tournament;
@@ -71,9 +78,12 @@ public sealed class TournamentListFormatter
         builder.Append("\"><b>");
         builder.Append(Escape(TournamentTitleNormalizer.Normalize(tournament.Title)));
         builder.Append("</b></a>\n");
-        builder.Append("<b>ID:</b> <code>");
-        builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
-        builder.Append("</code>\n");
+        if (tournamentIdDisplayMode == TournamentIdDisplayMode.WithTournamentId)
+        {
+            builder.Append("<b>ID:</b> <code>");
+            builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
+            builder.Append("</code>\n");
+        }
         builder.Append("<b>Редакторы:</b> ");
         builder.Append(Escape(FormatEditors(tournament.Editors)));
         builder.Append("\n<b>Вопросы:</b> ");

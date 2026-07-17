@@ -115,7 +115,10 @@ public sealed class StartPollService
             return new StartPollResult(null, null);
         }
 
-        var formattingResult = await tournamentListFormatter.FormatAsync(candidates, cancellationToken);
+        var formattingResult = await tournamentListFormatter.FormatAsync(
+            candidates,
+            TournamentIdDisplayMode.WithoutTournamentId,
+            cancellationToken);
         var publicationRequest = CreatePublicationRequest(
             settings.TargetChatId,
             targetDate,

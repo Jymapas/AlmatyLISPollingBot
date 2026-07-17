@@ -30,6 +30,7 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages[0].Should().Contain("<b>Исключённый</b>");
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
         result.Pages[0].Should().Contain("<b>Первый</b>");
+        result.Pages[0].Should().Contain("<b>ID:</b> <code>1</code>");
     }
 
     [Fact]
@@ -60,6 +61,7 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages.Should().ContainSingle();
         result.Pages[0].Should().Contain("<b>Исключённый</b>");
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
+        result.Pages[0].Should().NotContain("<b>ID:</b>");
         result.Pages[0].Should().NotContain("Обычный");
         result.Pages[0].Should().NotContain("Неподходящий");
     }

@@ -33,6 +33,7 @@ public sealed class StartPollServiceTests
         session.Candidates[0].IsAvailableAtSecondSlot.Should().BeTrue();
 
         fixture.PollPublisher.HtmlMessages.Should().ContainSingle();
+        fixture.PollPublisher.HtmlMessages[0].Should().NotContain("<b>ID:</b>");
         fixture.PollPublisher.PollRequests.Should().ContainSingle();
         var request = fixture.PollPublisher.PollRequests[0];
         request.Question.Should().Be("Выбираем 2 синхрона на субботу, 07.03.2026:");
