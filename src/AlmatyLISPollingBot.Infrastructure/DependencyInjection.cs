@@ -7,6 +7,7 @@ using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Infrastructure.Persistence;
 using AlmatyLISPollingBot.Infrastructure.Persistence.Repositories;
 using AlmatyLISPollingBot.Infrastructure.Services;
+using AlmatyLISPollingBot.Infrastructure.Services.Chgk;
 using AlmatyLISPollingBot.Infrastructure.Services.ExchangeRates;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -57,19 +58,23 @@ public static class DependencyInjection
         services.AddScoped<ICurrencyExchangeRateRepository, CurrencyExchangeRateRepository>();
 
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IChgkRequestPacer, ChgkRequestPacer>();
+        services.AddTransient<ChgkRateLimitHandler>();
 
-        services.AddHttpClient<IChgkTournamentClient, ChgkTournamentClient>((serviceProvider, client) =>
+        var chgkClientBuilder = services.AddHttpClient<IChgkTournamentClient, ChgkTournamentClient>((serviceProvider, client) =>
             {
                 var apiConfiguration = serviceProvider
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<ChgkApiConfiguration>>()
                     .Value;
                 client.BaseAddress = new Uri(apiConfiguration.BaseUrl);
                 client.Timeout = TimeSpan.FromSeconds(30);
-            })
-            .AddStandardResilienceHandler(options =>
-            {
-                options.Retry.MaxRetryAttempts = 3;
             });
+        chgkClientBuilder.AddStandardResilienceHandler(options =>
+        {
+            options.Retry.MaxRetryAttempts = 3;
+        });
+        // Registered after resilience so every outbound attempt, including retries, is paced.
+        chgkClientBuilder.AddHttpMessageHandler<ChgkRateLimitHandler>();
 
         services.AddHttpClient<IExchangeRateProvider, NationalBankExchangeRateProvider>((serviceProvider, client) =>
             {
