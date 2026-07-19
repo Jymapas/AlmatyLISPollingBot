@@ -1,6 +1,7 @@
 using AlmatyLISPollingBot.Application.Abstractions.Messaging;
 using AlmatyLISPollingBot.Application.Contracts.Polls;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -45,11 +46,24 @@ public sealed class TelegramPollPublisher : IPollPublisher
 
     public async Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken)
     {
-        await botClient.StopPoll(chatId, pollMessageId, cancellationToken: cancellationToken);
+        try
+        {
+            await botClient.StopPoll(chatId, pollMessageId, cancellationToken: cancellationToken);
+        }
+        catch (ApiRequestException exception) when (IsStoppedPollUnavailable(exception))
+        {
+            throw new PollNotFoundException(exception);
+        }
     }
 
     public async Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken)
     {
         await botClient.DeleteMessage(chatId, messageId, cancellationToken);
+    }
+
+    private static bool IsStoppedPollUnavailable(ApiRequestException exception)
+    {
+        return exception.Message.Contains("chat not found", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("poll has already been closed", StringComparison.OrdinalIgnoreCase);
     }
 }

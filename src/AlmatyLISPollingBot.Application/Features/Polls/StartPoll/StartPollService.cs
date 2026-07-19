@@ -98,7 +98,14 @@ public sealed class StartPollService
             var activePoll = await pollSessionRepository.GetActiveAsync(cancellationToken);
             if (activePoll?.PollMessageId is not null)
             {
-                await pollPublisher.StopPollAsync(activePoll.ChatId, activePoll.PollMessageId.Value, cancellationToken);
+                try
+                {
+                    await pollPublisher.StopPollAsync(activePoll.ChatId, activePoll.PollMessageId.Value, cancellationToken);
+                }
+                catch (PollNotFoundException)
+                {
+                }
+
                 activePoll.Status = PollLifecycleStatus.Stopped;
                 activePoll.StoppedAtUtc = clock.UtcNow;
             }

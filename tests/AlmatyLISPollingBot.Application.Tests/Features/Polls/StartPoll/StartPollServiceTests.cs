@@ -207,6 +207,26 @@ public sealed class StartPollServiceTests
         fixture.ForcedTournamentRepository.RemovedIds.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task StartAsync_ShouldReplaceStaleActivePollWhenTelegramCannotFindIt()
+    {
+        var activePoll = new PollSession
+        {
+            ChatId = -100456,
+            PollMessageId = 55,
+            Status = AlmatyLISPollingBot.Domain.Enums.PollLifecycleStatus.Active
+        };
+        var fixture = new PollFixture(new[] { CreateTournament() }, activePoll);
+        fixture.PollPublisher.ThrowPollNotFoundOnStop = true;
+
+        var session = await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        session.Should().NotBeNull();
+        activePoll.Status.Should().Be(AlmatyLISPollingBot.Domain.Enums.PollLifecycleStatus.Stopped);
+        activePoll.StoppedAtUtc.Should().Be(new DateTimeOffset(2026, 3, 2, 5, 0, 0, TimeSpan.Zero));
+        fixture.PollPublisher.PollRequests.Should().ContainSingle();
+    }
+
     private static TournamentDetails CreateTournament(
         int id = 7,
         string title = "Синхрон",
@@ -238,17 +258,20 @@ public sealed class StartPollServiceTests
 
         public PollFixture(
             IReadOnlyCollection<TournamentDetails> tournaments,
+            PollSession? activePoll = null,
             IReadOnlyCollection<int>? forcedTournamentIds = null)
         {
             this.tournaments = tournaments;
             ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds);
             TournamentClient = new StubTournamentClient(tournaments);
+            PollSessionRepository = new StubPollSessionRepository(activePoll);
         }
 
         public StubPollPublisher PollPublisher { get; } = new();
         public StubChatBotClient ChatBotClient { get; } = new();
         public StubForcedTournamentRepository ForcedTournamentRepository { get; }
         public StubTournamentClient TournamentClient { get; }
+        public StubPollSessionRepository PollSessionRepository { get; }
 
         public StartPollService CreateService()
         {
@@ -256,7 +279,7 @@ public sealed class StartPollServiceTests
             return new StartPollService(
                 clock,
                 ForcedTournamentRepository,
-                new StubPollSessionRepository(),
+                PollSessionRepository,
                 new PollCandidatePreparationService(
                     clock,
                     new StubSettingsRepository(),
@@ -303,7 +326,14 @@ public sealed class StartPollServiceTests
 
     private sealed class StubPollSessionRepository : IPollSessionRepository
     {
-        public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
+        private readonly PollSession? activePoll;
+
+        public StubPollSessionRepository(PollSession? activePoll = null)
+        {
+            this.activePoll = activePoll;
+        }
+
+        public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult(activePoll);
 
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -382,6 +412,7 @@ public sealed class StartPollServiceTests
         public List<PollPublicationRequest> PollRequests { get; } = new();
         public List<int> DeletedMessageIds { get; } = new();
         public bool ThrowOnPoll { get; set; }
+        public bool ThrowPollNotFoundOnStop { get; set; }
 
         public Task<int> SendHtmlMessageAsync(long chatId, string message, CancellationToken cancellationToken)
         {
@@ -397,7 +428,12 @@ public sealed class StartPollServiceTests
                 : Task.FromResult(new PublishedPoll("telegram-poll-id", 102));
         }
 
-        public Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken)
+        {
+            return ThrowPollNotFoundOnStop
+                ? Task.FromException(new PollNotFoundException(new InvalidOperationException()))
+                : Task.CompletedTask;
+        }
 
         public Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken)
         {
