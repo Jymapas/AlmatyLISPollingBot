@@ -7,7 +7,9 @@ internal static class TournamentTitleNormalizer
         " (синхрон)",
         "(асинхрон и онлайн)",
         " (асинхрон/онлайн)",
-        " (асинхрон)"
+        " (асинхрон)",
+        " (а)",
+        " (с)"
     };
 
     public static string Normalize(string title)

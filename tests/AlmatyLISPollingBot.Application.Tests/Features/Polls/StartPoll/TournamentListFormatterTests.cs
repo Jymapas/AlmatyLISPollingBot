@@ -112,6 +112,8 @@ public sealed class TournamentListFormatterTests
     [InlineData("Турнир (АСИНХРОН И ОНЛАЙН)  ", "Турнир")]
     [InlineData("Турнир (асинхрон/онлайн)  ", "Турнир")]
     [InlineData("Турнир (АсИнХрОн)  ", "Турнир")]
+    [InlineData("Турнир (С)  ", "Турнир")]
+    [InlineData("Турнир (А)  ", "Турнир")]
     public async Task FormatAsync_ShouldRemoveTerminalTechnicalTitleSuffix(string title, string expectedTitle)
     {
         var sut = new TournamentListFormatter(new StubExchangeRateProvider());
