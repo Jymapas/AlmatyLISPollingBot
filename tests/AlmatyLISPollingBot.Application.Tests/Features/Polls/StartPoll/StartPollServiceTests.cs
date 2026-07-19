@@ -227,6 +227,18 @@ public sealed class StartPollServiceTests
         fixture.PollPublisher.PollRequests.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task StartAsync_ShouldNotRunSharedPersistenceReadsConcurrently()
+    {
+        var fixture = new PollFixture(
+            new[] { CreateTournament() },
+            detectConcurrentPersistenceReads: true);
+
+        var session = await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        session.Should().NotBeNull();
+    }
+
     private static TournamentDetails CreateTournament(
         int id = 7,
         string title = "Синхрон",
@@ -259,12 +271,17 @@ public sealed class StartPollServiceTests
         public PollFixture(
             IReadOnlyCollection<TournamentDetails> tournaments,
             PollSession? activePoll = null,
-            IReadOnlyCollection<int>? forcedTournamentIds = null)
+            IReadOnlyCollection<int>? forcedTournamentIds = null,
+            bool detectConcurrentPersistenceReads = false)
         {
             this.tournaments = tournaments;
-            ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds);
+            var persistenceReadDetector = detectConcurrentPersistenceReads
+                ? new ConcurrentPersistenceReadDetector()
+                : null;
+            ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds, persistenceReadDetector);
             TournamentClient = new StubTournamentClient(tournaments);
             PollSessionRepository = new StubPollSessionRepository(activePoll);
+            LookupRepository = new StubLookupRepository(persistenceReadDetector);
         }
 
         public StubPollPublisher PollPublisher { get; } = new();
@@ -272,6 +289,7 @@ public sealed class StartPollServiceTests
         public StubForcedTournamentRepository ForcedTournamentRepository { get; }
         public StubTournamentClient TournamentClient { get; }
         public StubPollSessionRepository PollSessionRepository { get; }
+        public StubLookupRepository LookupRepository { get; }
 
         public StartPollService CreateService()
         {
@@ -283,7 +301,7 @@ public sealed class StartPollServiceTests
                 new PollCandidatePreparationService(
                     clock,
                     new StubSettingsRepository(),
-                    new StubLookupRepository(),
+                    LookupRepository,
                     ForcedTournamentRepository,
                     TournamentClient,
                     new PollCandidateSelectionService()),
@@ -314,8 +332,20 @@ public sealed class StartPollServiceTests
 
     private sealed class StubLookupRepository : IReadOnlyLookupRepository
     {
+        private readonly ConcurrentPersistenceReadDetector? persistenceReadDetector;
+
+        public StubLookupRepository(ConcurrentPersistenceReadDetector? persistenceReadDetector = null)
+        {
+            this.persistenceReadDetector = persistenceReadDetector;
+        }
+
         public Task<IReadOnlyCollection<int>> GetExcludedTournamentIdsAsync(CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyCollection<int>>(Array.Empty<int>());
+        {
+            return persistenceReadDetector?.RunAsync(
+                () => (IReadOnlyCollection<int>)Array.Empty<int>(),
+                cancellationToken)
+                ?? Task.FromResult<IReadOnlyCollection<int>>(Array.Empty<int>());
+        }
 
         public Task<IReadOnlyCollection<long>> GetShadowBannedUserIdsAsync(CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyCollection<long>>(Array.Empty<long>());
@@ -343,8 +373,11 @@ public sealed class StartPollServiceTests
     private sealed class StubForcedTournamentRepository : IForcedTournamentRepository
     {
         private readonly IReadOnlyCollection<ForcedTournament> queuedTournaments;
+        private readonly ConcurrentPersistenceReadDetector? persistenceReadDetector;
 
-        public StubForcedTournamentRepository(IReadOnlyCollection<int>? forcedTournamentIds = null)
+        public StubForcedTournamentRepository(
+            IReadOnlyCollection<int>? forcedTournamentIds = null,
+            ConcurrentPersistenceReadDetector? persistenceReadDetector = null)
         {
             queuedTournaments = (forcedTournamentIds ?? Array.Empty<int>())
                 .Select((tournamentId, index) => new ForcedTournament
@@ -353,12 +386,18 @@ public sealed class StartPollServiceTests
                     QueuedAtUtc = new DateTimeOffset(2026, 3, 1, 0, index, 0, TimeSpan.Zero)
                 })
                 .ToArray();
+            this.persistenceReadDetector = persistenceReadDetector;
         }
 
         public IReadOnlyCollection<int> RemovedIds { get; private set; } = Array.Empty<int>();
 
         public Task<IReadOnlyCollection<ForcedTournament>> GetQueuedAsync(CancellationToken cancellationToken)
-            => Task.FromResult(queuedTournaments);
+        {
+            return persistenceReadDetector?.RunAsync(
+                () => queuedTournaments,
+                cancellationToken)
+                ?? Task.FromResult(queuedTournaments);
+        }
 
         public Task<IReadOnlyCollection<int>> AddMissingAsync(
             IReadOnlyCollection<int> tournamentIds,
@@ -397,6 +436,31 @@ public sealed class StartPollServiceTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(tournaments);
+        }
+    }
+
+    private sealed class ConcurrentPersistenceReadDetector
+    {
+        private int activeReadCount;
+
+        public async Task<T> RunAsync<T>(Func<T> resultFactory, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref activeReadCount) != 1)
+            {
+                Interlocked.Decrement(ref activeReadCount);
+                throw new InvalidOperationException("Persistence reads must not run concurrently.");
+            }
+
+            try
+            {
+                await Task.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+                return resultFactory();
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeReadCount);
+            }
         }
     }
 

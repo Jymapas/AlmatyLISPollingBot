@@ -62,12 +62,9 @@ public sealed class PollCandidatePreparationService
                 ForcedCandidateCount: 0);
         }
 
-        var excludedIdsTask = lookupRepository.GetExcludedTournamentIdsAsync(cancellationToken);
-        var forcedTournamentsTask = forcedTournamentRepository.GetQueuedAsync(cancellationToken);
         var tournamentsTask = tournamentClient.GetTournamentsIntersectingDateAsync(targetDate, cancellationToken);
-        await Task.WhenAll(excludedIdsTask, forcedTournamentsTask, tournamentsTask);
-        var excludedIds = await excludedIdsTask;
-        var forcedTournaments = await forcedTournamentsTask;
+        var excludedIds = await lookupRepository.GetExcludedTournamentIdsAsync(cancellationToken);
+        var forcedTournaments = await forcedTournamentRepository.GetQueuedAsync(cancellationToken);
         var tournaments = await tournamentsTask;
 
         var forcedCandidates = candidateSelectionService.SelectForcedCandidates(
