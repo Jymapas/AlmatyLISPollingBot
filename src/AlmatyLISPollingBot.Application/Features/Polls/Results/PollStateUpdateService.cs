@@ -8,6 +8,8 @@ namespace AlmatyLISPollingBot.Application.Features.Polls.Results;
 
 public sealed class PollStateUpdateService
 {
+    private static readonly SemaphoreSlim UpdateGate = new(1, 1);
+
     private readonly IPollSessionRepository pollSessionRepository;
     private readonly IClock clock;
 
@@ -17,7 +19,21 @@ public sealed class PollStateUpdateService
         this.clock = clock;
     }
 
-    public async Task ApplyPollSnapshotAsync(PollSnapshot snapshot, CancellationToken cancellationToken)
+    public Task ApplyPollSnapshotAsync(PollSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        return ExecuteSerializedAsync(
+            () => ApplyPollSnapshotCoreAsync(snapshot, cancellationToken),
+            cancellationToken);
+    }
+
+    public Task ApplyPollAnswerAsync(PollAnswerSnapshot answer, CancellationToken cancellationToken)
+    {
+        return ExecuteSerializedAsync(
+            () => ApplyPollAnswerCoreAsync(answer, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task ApplyPollSnapshotCoreAsync(PollSnapshot snapshot, CancellationToken cancellationToken)
     {
         var session = await pollSessionRepository.GetByTelegramPollIdAsync(snapshot.TelegramPollId, cancellationToken);
         if (session is null)
@@ -55,7 +71,7 @@ public sealed class PollStateUpdateService
         await pollSessionRepository.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task ApplyPollAnswerAsync(PollAnswerSnapshot answer, CancellationToken cancellationToken)
+    private async Task ApplyPollAnswerCoreAsync(PollAnswerSnapshot answer, CancellationToken cancellationToken)
     {
         var session = await pollSessionRepository.GetByTelegramPollIdAsync(answer.TelegramPollId, cancellationToken);
         if (session is null)
@@ -87,5 +103,18 @@ public sealed class PollStateUpdateService
         voter.LastUpdateId = answer.UpdateId;
         voter.UpdatedAtUtc = clock.UtcNow;
         await pollSessionRepository.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task ExecuteSerializedAsync(Func<Task> operation, CancellationToken cancellationToken)
+    {
+        await UpdateGate.WaitAsync(cancellationToken);
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            UpdateGate.Release();
+        }
     }
 }

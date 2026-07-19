@@ -69,6 +69,31 @@ public sealed class PollStateUpdateServiceTests
         (JsonSerializer.Deserialize<string[]>(session.VoterStates.Single().OptionPersistentIdsJson) ?? Array.Empty<string>()).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ApplyPollSnapshotAsync_ShouldSerializeUpdatesAcrossServiceInstances()
+    {
+        var session = CreateSession();
+        var saveDetector = new ConcurrentSaveDetector();
+        var firstService = new PollStateUpdateService(
+            new InMemoryPollSessionRepository(session, saveDetector),
+            new TestClock());
+        var secondService = new PollStateUpdateService(
+            new InMemoryPollSessionRepository(session, saveDetector),
+            new TestClock());
+
+        var updates = new[]
+        {
+            firstService.ApplyPollSnapshotAsync(
+                new PollSnapshot("poll", new[] { new PollOptionSnapshot("a", "A", 0, 1) }),
+                CancellationToken.None),
+            secondService.ApplyPollSnapshotAsync(
+                new PollSnapshot("poll", new[] { new PollOptionSnapshot("a", "A", 0, 2) }),
+                CancellationToken.None)
+        };
+
+        await Task.WhenAll(updates);
+    }
+
     private static PollSession CreateSession()
     {
         var session = new PollSession { TelegramPollId = "poll", Status = PollLifecycleStatus.Active };
@@ -86,12 +111,48 @@ public sealed class PollStateUpdateServiceTests
     private sealed class InMemoryPollSessionRepository : IPollSessionRepository
     {
         private readonly PollSession session;
-        public InMemoryPollSessionRepository(PollSession session) => this.session = session;
+        private readonly ConcurrentSaveDetector? saveDetector;
+
+        public InMemoryPollSessionRepository(PollSession session, ConcurrentSaveDetector? saveDetector = null)
+        {
+            this.session = session;
+            this.saveDetector = saveDetector;
+        }
         public int SaveCount { get; private set; }
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(session);
         public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult(pollSessionId == session.Id ? session : null);
         public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult(telegramPollId == session.TelegramPollId ? session : null);
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task SaveChangesAsync(CancellationToken cancellationToken) { SaveCount++; return Task.CompletedTask; }
+        public async Task SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            SaveCount++;
+            if (saveDetector is not null)
+            {
+                await saveDetector.SaveAsync(cancellationToken);
+            }
+        }
+    }
+
+    private sealed class ConcurrentSaveDetector
+    {
+        private int activeSaveCount;
+
+        public async Task SaveAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref activeSaveCount) != 1)
+            {
+                Interlocked.Decrement(ref activeSaveCount);
+                throw new InvalidOperationException("Poll state saves must not run concurrently.");
+            }
+
+            try
+            {
+                await Task.Delay(10, cancellationToken);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeSaveCount);
+            }
+        }
     }
 }
