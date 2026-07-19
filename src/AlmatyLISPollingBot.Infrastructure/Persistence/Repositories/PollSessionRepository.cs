@@ -20,7 +20,9 @@ public sealed class PollSessionRepository : IPollSessionRepository
             .Include(x => x.Candidates)
             .Include(x => x.OptionStates)
             .Include(x => x.VoterStates)
-            .SingleOrDefaultAsync(x => x.Status == PollLifecycleStatus.Active, cancellationToken);
+            .SingleOrDefaultAsync(
+                x => x.Status == PollLifecycleStatus.Active || x.Status == PollLifecycleStatus.Draft,
+                cancellationToken);
     }
 
     public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken)
