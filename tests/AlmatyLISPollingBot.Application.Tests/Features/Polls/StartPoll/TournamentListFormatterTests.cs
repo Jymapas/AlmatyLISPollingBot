@@ -201,7 +201,7 @@ public sealed class TournamentListFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsync_ShouldUseNonListPrefixAfterNineCandidates()
+    public async Task FormatAsync_ShouldUseNumericPrefixAfterNineCandidates()
     {
         var sut = new TournamentListFormatter(new StubExchangeRateProvider());
         var candidates = Enumerable.Range(1, 11)
@@ -214,7 +214,7 @@ public sealed class TournamentListFormatterTests
             TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
-        result.Pages[0].Should().Contain("11) <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 11</b></a>");
+        result.Pages[0].Should().Contain("11. <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 11</b></a>");
     }
 
     [Fact]
@@ -240,7 +240,7 @@ public sealed class TournamentListFormatterTests
         result.Pages.Should().HaveCount(2);
         result.Pages[0].Should().Contain("Турнир 9");
         result.Pages[0].Should().NotContain("Турнир 10");
-        result.Pages[1].Should().Contain("10) <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 10</b></a>");
+        result.Pages[1].Should().Contain("10. <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 10</b></a>");
     }
 
     private static PollTournamentCandidate CreateCandidate(

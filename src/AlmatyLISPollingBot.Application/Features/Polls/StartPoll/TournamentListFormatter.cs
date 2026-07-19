@@ -184,7 +184,7 @@ public sealed class TournamentListFormatter
     {
         return index < NumberEmoji.Length
             ? NumberEmoji[index]
-            : string.Concat((index + 1).ToString(CultureInfo.InvariantCulture), ")");
+            : string.Concat((index + 1).ToString(CultureInfo.InvariantCulture), ".");
     }
 
     private static IReadOnlyList<TournamentPaymentCategory> SelectPaymentCategories(TournamentDetails tournament)
