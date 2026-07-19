@@ -10,6 +10,9 @@ namespace AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 public sealed class TournamentListFormatter
 {
     private const int TelegramMessageLengthLimit = 4096;
+    private const int TelegramFormattingEntityLimit = 100;
+    private const int TelegramFormattingEntitySafetyMargin = 10;
+    private const int TelegramFormattingEntityPageLimit = TelegramFormattingEntityLimit - TelegramFormattingEntitySafetyMargin;
     private static readonly string[] NumberEmoji = { "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣" };
     private static readonly string[] CurrencyPriority = { "KZT", "RUB", "USD" };
 
@@ -297,14 +300,19 @@ public sealed class TournamentListFormatter
     {
         var pages = new List<string>();
         var currentPage = new StringBuilder();
+        var currentPageEntityCount = 0;
 
         foreach (var entry in entries)
         {
             var separatorLength = currentPage.Length == 0 ? 0 : 2;
-            if (currentPage.Length > 0 && currentPage.Length + separatorLength + entry.Length > TelegramMessageLengthLimit)
+            var entryEntityCount = GetFormattingEntityCount(entry);
+            if (currentPage.Length > 0
+                && (currentPage.Length + separatorLength + entry.Length > TelegramMessageLengthLimit
+                    || currentPageEntityCount + entryEntityCount > TelegramFormattingEntityPageLimit))
             {
                 pages.Add(currentPage.ToString());
                 currentPage.Clear();
+                currentPageEntityCount = 0;
             }
 
             if (entry.Length > TelegramMessageLengthLimit)
@@ -315,6 +323,7 @@ public sealed class TournamentListFormatter
                     {
                         pages.Add(currentPage.ToString());
                         currentPage.Clear();
+                        currentPageEntityCount = 0;
                     }
 
                     pages.Add(part);
@@ -329,6 +338,7 @@ public sealed class TournamentListFormatter
             }
 
             currentPage.Append(entry);
+            currentPageEntityCount += entryEntityCount;
         }
 
         if (currentPage.Length > 0)
@@ -337,6 +347,26 @@ public sealed class TournamentListFormatter
         }
 
         return pages;
+    }
+
+    private static int GetFormattingEntityCount(string entry)
+    {
+        return CountOccurrences(entry, "<a ")
+            + CountOccurrences(entry, "<b>")
+            + CountOccurrences(entry, "<code>");
+    }
+
+    private static int CountOccurrences(string value, string token)
+    {
+        var count = 0;
+        var startIndex = 0;
+        while ((startIndex = value.IndexOf(token, startIndex, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            startIndex += token.Length;
+        }
+
+        return count;
     }
 
     private static IEnumerable<string> SplitLongEntry(string entry)

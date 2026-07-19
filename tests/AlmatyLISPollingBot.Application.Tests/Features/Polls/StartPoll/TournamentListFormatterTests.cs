@@ -217,6 +217,32 @@ public sealed class TournamentListFormatterTests
         result.Pages[0].Should().Contain("11) <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 11</b></a>");
     }
 
+    [Fact]
+    public async Task FormatAsync_ShouldStartANewPageBeforeExceedingTelegramFormattingEntityLimit()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidates = Enumerable.Range(1, 10)
+            .Select(index => CreateCandidate(
+                title: $"Турнир {index}",
+                paymentCategories: new[] { new TournamentPaymentCategory(5000m, "KZT", "по умолчанию") },
+                firstSlot: true,
+                secondSlot: false))
+            .ToArray();
+
+        var result = await sut.FormatAsync(
+            candidates,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            TournamentDateRangeDisplayMode.WithDateRange,
+            TimeZoneInfo.Utc,
+            CancellationToken.None);
+
+        result.Pages.Should().HaveCount(2);
+        result.Pages[0].Should().Contain("Турнир 9");
+        result.Pages[0].Should().NotContain("Турнир 10");
+        result.Pages[1].Should().Contain("10) <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 10</b></a>");
+    }
+
     private static PollTournamentCandidate CreateCandidate(
         string title = "Турнир",
         IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null,
