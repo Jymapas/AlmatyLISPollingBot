@@ -200,6 +200,23 @@ public sealed class TournamentListFormatterTests
         result.Pages[0].Should().Contain("<b>Период:</b> 18.07 03:00 — 18.07 13:00");
     }
 
+    [Fact]
+    public async Task FormatAsync_ShouldUseNonListPrefixAfterNineCandidates()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidates = Enumerable.Range(1, 11)
+            .Select(index => CreateCandidate(title: $"Турнир {index}"))
+            .ToArray();
+
+        var result = await sut.FormatAsync(
+            candidates,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain("11) <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 11</b></a>");
+    }
+
     private static PollTournamentCandidate CreateCandidate(
         string title = "Турнир",
         IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null,
