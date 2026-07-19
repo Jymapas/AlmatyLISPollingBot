@@ -197,6 +197,18 @@ public sealed class StartPollService
             SortOrder = x.SortOrder
         }));
 
+        if (publishedPoll.Options is not null)
+        {
+            pollSession.OptionStates.AddRange(publishedPoll.Options.Select(x => new PollOptionState
+            {
+                PersistentId = x.PersistentId,
+                Text = x.Text,
+                Position = x.Position,
+                IsResultsOption = x.Position == publishedPoll.Options.Count - 1,
+                LastSnapshotAtUtc = clock.UtcNow
+            }));
+        }
+
         return pollSession;
     }
 

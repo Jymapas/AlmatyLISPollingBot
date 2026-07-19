@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<IForcedTournamentRepository, ForcedTournamentRepository>();
         services.AddScoped<IChatAdministratorRepository, ChatAdministratorRepository>();
         services.AddScoped<ICurrencyExchangeRateRepository, CurrencyExchangeRateRepository>();
+        services.AddScoped<IShadowBannedUserRepository, ShadowBannedUserRepository>();
 
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IChgkRequestPacer, ChgkRequestPacer>();

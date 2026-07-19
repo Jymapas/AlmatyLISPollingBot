@@ -1,3 +1,6 @@
 namespace AlmatyLISPollingBot.Application.Contracts.Polls;
 
-public sealed record PublishedPoll(string TelegramPollId, int MessageId);
+public sealed record PublishedPoll(
+    string TelegramPollId,
+    int MessageId,
+    IReadOnlyList<PublishedPollOption>? Options = null);

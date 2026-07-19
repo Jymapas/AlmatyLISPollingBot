@@ -31,6 +31,7 @@ public sealed class TelegramCommandMenuInitializationServiceTests
                 BotCommands.Unexclude,
                 BotCommands.Force,
                 BotCommands.Cancel,
-                BotCommands.MakePost);
+                BotCommands.MakePost,
+                BotCommands.Results);
     }
 }

@@ -22,7 +22,7 @@ public sealed class LookupRepository : IReadOnlyLookupRepository
 
     public async Task<IReadOnlyCollection<long>> GetShadowBannedUserIdsAsync(CancellationToken cancellationToken)
     {
-        return await dbContext.ShadowBannedUsers.Select(x => x.TelegramUserId).ToArrayAsync(cancellationToken);
+        return await dbContext.ShadowBannedUsers.Where(x => !x.IsDeleted).Select(x => x.TelegramUserId).ToArrayAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<long>> GetAdminUserIdsAsync(CancellationToken cancellationToken)

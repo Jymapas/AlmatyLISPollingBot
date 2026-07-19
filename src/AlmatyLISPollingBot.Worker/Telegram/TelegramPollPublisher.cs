@@ -41,7 +41,10 @@ public sealed class TelegramPollPublisher : IPollPublisher
         var pollId = sentMessage.Poll?.Id
             ?? throw new InvalidOperationException("Telegram returned a poll message without a poll identifier.");
 
-        return new PublishedPoll(pollId, sentMessage.MessageId);
+        var options = sentMessage.Poll?.Options
+            .Select((x, index) => new PublishedPollOption(x.PersistentId, x.Text, index))
+            .ToArray();
+        return new PublishedPoll(pollId, sentMessage.MessageId, options);
     }
 
     public async Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken)

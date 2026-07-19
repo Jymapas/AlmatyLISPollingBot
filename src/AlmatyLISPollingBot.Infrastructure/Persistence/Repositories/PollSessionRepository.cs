@@ -18,7 +18,17 @@ public sealed class PollSessionRepository : IPollSessionRepository
     {
         return dbContext.PollSessions
             .Include(x => x.Candidates)
+            .Include(x => x.OptionStates)
+            .Include(x => x.VoterStates)
             .SingleOrDefaultAsync(x => x.Status == PollLifecycleStatus.Active || x.Status == PollLifecycleStatus.Draft, cancellationToken);
+    }
+
+    public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken)
+    {
+        return dbContext.PollSessions
+            .Include(x => x.OptionStates)
+            .Include(x => x.VoterStates)
+            .SingleOrDefaultAsync(x => x.TelegramPollId == telegramPollId, cancellationToken);
     }
 
     public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken)
