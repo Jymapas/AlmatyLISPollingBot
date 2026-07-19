@@ -59,6 +59,7 @@ public sealed class PollStateUpdateService
                     IsResultsOption = false
                 };
                 session.OptionStates.Add(state);
+                await pollSessionRepository.AddOptionStateAsync(state, cancellationToken);
             }
 
             state.Text = option.Text;
@@ -95,6 +96,7 @@ public sealed class PollStateUpdateService
                 TelegramPeerId = answer.TelegramPeerId
             };
             session.VoterStates.Add(voter);
+            await pollSessionRepository.AddVoterStateAsync(voter, cancellationToken);
         }
 
         voter.DisplayName = answer.DisplayName;

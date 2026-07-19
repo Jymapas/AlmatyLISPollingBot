@@ -77,6 +77,8 @@ public sealed class PollResultsServiceTests
         public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult(pollSessionId == session.Id ? session : null);
         public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task AddOptionStateAsync(PollOptionState optionState, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task AddVoterStateAsync(PollVoterState voterState, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 

@@ -75,6 +75,10 @@ public sealed class StopPollServiceTests
 
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
 
+        public Task AddOptionStateAsync(PollOptionState optionState, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task AddVoterStateAsync(PollVoterState voterState, CancellationToken cancellationToken) => Task.CompletedTask;
+
         public Task SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveChangesCalls++;

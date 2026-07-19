@@ -46,6 +46,18 @@ public sealed class PollSessionRepository : IPollSessionRepository
         return dbContext.PollSessions.AddAsync(pollSession, cancellationToken).AsTask();
     }
 
+    public Task AddOptionStateAsync(PollOptionState optionState, CancellationToken cancellationToken)
+    {
+        dbContext.PollOptionStates.Add(optionState);
+        return Task.CompletedTask;
+    }
+
+    public Task AddVoterStateAsync(PollVoterState voterState, CancellationToken cancellationToken)
+    {
+        dbContext.PollVoterStates.Add(voterState);
+        return Task.CompletedTask;
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         return dbContext.SaveChangesAsync(cancellationToken);

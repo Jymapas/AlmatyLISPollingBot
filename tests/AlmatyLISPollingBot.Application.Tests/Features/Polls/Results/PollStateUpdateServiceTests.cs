@@ -26,6 +26,7 @@ public sealed class PollStateUpdateServiceTests
 
         session.OptionStates.Should().Contain(x => x.PersistentId == "dynamic" && x.IsActive && x.TelegramVoterCount == 1);
         session.OptionStates.Should().Contain(x => x.PersistentId == "results" && !x.IsActive);
+        repository.AddedOptionStates.Should().ContainSingle(x => x.PersistentId == "dynamic");
         repository.SaveCount.Should().Be(1);
     }
 
@@ -44,6 +45,7 @@ public sealed class PollStateUpdateServiceTests
         var voter = session.VoterStates.Should().ContainSingle().Subject;
         (JsonSerializer.Deserialize<string[]>(voter.OptionPersistentIdsJson) ?? Array.Empty<string>()).Should().Equal("b");
         voter.LastUpdateId.Should().Be(11);
+        repository.AddedVoterStates.Should().ContainSingle().Which.TelegramPeerId.Should().Be(42);
     }
 
     [Fact]
@@ -119,10 +121,22 @@ public sealed class PollStateUpdateServiceTests
             this.saveDetector = saveDetector;
         }
         public int SaveCount { get; private set; }
+        public List<PollOptionState> AddedOptionStates { get; } = new();
+        public List<PollVoterState> AddedVoterStates { get; } = new();
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(session);
         public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult(pollSessionId == session.Id ? session : null);
         public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult(telegramPollId == session.TelegramPollId ? session : null);
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task AddOptionStateAsync(PollOptionState optionState, CancellationToken cancellationToken)
+        {
+            AddedOptionStates.Add(optionState);
+            return Task.CompletedTask;
+        }
+        public Task AddVoterStateAsync(PollVoterState voterState, CancellationToken cancellationToken)
+        {
+            AddedVoterStates.Add(voterState);
+            return Task.CompletedTask;
+        }
         public async Task SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveCount++;
