@@ -44,7 +44,7 @@ public sealed class ListTournamentOptionsService
     {
         return await ExecuteAsync(
             onlyExcluded: true,
-            TournamentIdDisplayMode.WithoutTournamentId,
+            TournamentIdDisplayMode.WithTournamentId,
             TournamentPaymentCategoriesDisplayMode.All,
             cancellationToken);
     }

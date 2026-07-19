@@ -93,7 +93,7 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages.Should().ContainSingle();
         result.Pages[0].Should().Contain("<b>Исключённый</b>");
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
-        result.Pages[0].Should().NotContain("<b>ID:</b>");
+        result.Pages[0].Should().Contain("<b>ID:</b> <code>2</code>");
         result.Pages[0].Should().Contain("студенты — 3000₸");
         result.Pages[0].Should().NotContain("<b>Турниры на");
         result.Pages[0].Should().NotContain("<b>Период:</b>");
