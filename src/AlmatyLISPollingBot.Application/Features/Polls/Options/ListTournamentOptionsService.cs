@@ -45,7 +45,7 @@ public sealed class ListTournamentOptionsService
         return await ExecuteAsync(
             onlyExcluded: true,
             TournamentIdDisplayMode.WithTournamentId,
-            TournamentPaymentCategoriesDisplayMode.All,
+            TournamentPaymentCategoriesDisplayMode.PrimaryOnly,
             cancellationToken);
     }
 
@@ -78,15 +78,11 @@ public sealed class ListTournamentOptionsService
             candidates,
             tournamentIdDisplayMode,
             paymentCategoriesDisplayMode,
-            onlyExcluded
-                ? TournamentDateRangeDisplayMode.WithoutDateRange
-                : TournamentDateRangeDisplayMode.WithDateRange,
+            TournamentDateRangeDisplayMode.WithDateRange,
             timeZone,
             cancellationToken);
 
-        var pages = onlyExcluded
-            ? formattingResult.Pages
-            : AddOptionsHeader(formattingResult.Pages, targetDate);
+        var pages = AddOptionsHeader(formattingResult.Pages, targetDate);
 
         return new TournamentOptionsResult(targetDate, pages);
     }
