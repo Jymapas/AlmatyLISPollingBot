@@ -70,6 +70,8 @@ public sealed class StopPollServiceTests
         public int SaveChangesCalls { get; private set; }
 
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(session);
+        public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
+        public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
 
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
 

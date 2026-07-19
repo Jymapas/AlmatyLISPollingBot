@@ -20,7 +20,15 @@ public sealed class PollSessionRepository : IPollSessionRepository
             .Include(x => x.Candidates)
             .Include(x => x.OptionStates)
             .Include(x => x.VoterStates)
-            .SingleOrDefaultAsync(x => x.Status == PollLifecycleStatus.Active || x.Status == PollLifecycleStatus.Draft, cancellationToken);
+            .SingleOrDefaultAsync(x => x.Status == PollLifecycleStatus.Active, cancellationToken);
+    }
+
+    public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken)
+    {
+        return dbContext.PollSessions
+            .Include(x => x.OptionStates)
+            .Include(x => x.VoterStates)
+            .SingleOrDefaultAsync(x => x.Id == pollSessionId, cancellationToken);
     }
 
     public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken)

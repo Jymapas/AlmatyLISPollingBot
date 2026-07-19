@@ -13,34 +13,27 @@ public sealed class ShadowBannedUserRepository : IShadowBannedUserRepository
     public Task<ShadowBannedUser?> GetAsync(long telegramUserId, CancellationToken cancellationToken) =>
         dbContext.ShadowBannedUsers.SingleOrDefaultAsync(x => x.TelegramUserId == telegramUserId, cancellationToken);
 
-    public async Task SetExcludedAsync(long telegramUserId, long administratorUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
+    public Task SetExcludedAsync(long telegramUserId, long administratorUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
     {
-        var user = await GetAsync(telegramUserId, cancellationToken);
-        if (user is null)
-        {
-            user = new ShadowBannedUser { TelegramUserId = telegramUserId };
-            await dbContext.ShadowBannedUsers.AddAsync(user, cancellationToken);
-        }
-
-        user.IsDeleted = false;
-        user.ExcludedAtUtc = changedAtUtc;
-        user.ExcludedByTelegramUserId = administratorUserId;
-        user.ReturnedAtUtc = null;
-        user.ReturnedByTelegramUserId = null;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        return dbContext.Database.ExecuteSqlInterpolatedAsync($@"
+            INSERT INTO shadow_banned_users (""Id"", ""TelegramUserId"", ""IsDeleted"", ""ExcludedAtUtc"", ""ExcludedByTelegramUserId"", ""ReturnedAtUtc"", ""ReturnedByTelegramUserId"", ""Note"")
+            VALUES ({Guid.NewGuid()}, {telegramUserId}, FALSE, {changedAtUtc}, {administratorUserId}, NULL, NULL, NULL)
+            ON CONFLICT (""TelegramUserId"") DO UPDATE
+            SET ""IsDeleted"" = FALSE,
+                ""ExcludedAtUtc"" = EXCLUDED.""ExcludedAtUtc"",
+                ""ExcludedByTelegramUserId"" = EXCLUDED.""ExcludedByTelegramUserId"",
+                ""ReturnedAtUtc"" = NULL,
+                ""ReturnedByTelegramUserId"" = NULL
+            WHERE shadow_banned_users.""IsDeleted"" = TRUE;", cancellationToken);
     }
 
     public async Task SetIncludedAsync(long telegramUserId, long administratorUserId, DateTimeOffset changedAtUtc, CancellationToken cancellationToken)
     {
-        var user = await GetAsync(telegramUserId, cancellationToken);
-        if (user is null)
-        {
-            return;
-        }
-
-        user.IsDeleted = true;
-        user.ReturnedAtUtc = changedAtUtc;
-        user.ReturnedByTelegramUserId = administratorUserId;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE shadow_banned_users
+            SET ""IsDeleted"" = TRUE,
+                ""ReturnedAtUtc"" = {changedAtUtc},
+                ""ReturnedByTelegramUserId"" = {administratorUserId}
+            WHERE ""TelegramUserId"" = {telegramUserId} AND ""IsDeleted"" = FALSE;", cancellationToken);
     }
 }

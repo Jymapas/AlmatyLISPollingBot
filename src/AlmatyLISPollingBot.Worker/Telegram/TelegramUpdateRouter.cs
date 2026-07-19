@@ -660,10 +660,16 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
+        if (summary.Options.Count == 0)
+        {
+            await SendPrivateMessageAsync(chatId, "Для активного опроса пока нет сохранённых вариантов. Дождитесь следующего обновления Telegram.", cancellationToken);
+            return;
+        }
+
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById(botConfiguration.Value.ApplicationTimeZone);
         var pages = SplitTelegramMessage(PollResultsService.FormatSummary(summary, timeZone));
         var keyboard = new InlineKeyboardMarkup(summary.Options
-            .Select(x => new[] { InlineKeyboardButton.WithCallbackData(x.Text.Length > 60 ? string.Concat(x.Text.AsSpan(0, 59), "…") : x.Text, $"r|{ToCallbackToken(summary.PollSessionId)}|{ToCallbackToken(x.OptionId)}") }));
+            .Select(x => new[] { InlineKeyboardButton.WithCallbackData(x.Text.Length > 60 ? string.Concat(x.Text.AsSpan(0, 59), "…") : x.Text, $"r|{PollResultsCallbackCodec.EncodeOption(summary.PollSessionId, x.OptionId)}") }));
         for (var index = 0; index < pages.Count; index++)
         {
             await botClient.SendMessage(chatId, pages[index], parseMode: ParseMode.Html, replyMarkup: index == pages.Count - 1 ? keyboard : null, cancellationToken: cancellationToken);
@@ -672,43 +678,69 @@ public sealed class TelegramUpdateRouter
 
     private async Task HandleCallbackAsync(CallbackQuery callback, CancellationToken cancellationToken)
     {
+        var acknowledged = false;
+        async Task AcknowledgeAsync()
+        {
+            if (acknowledged)
+            {
+                return;
+            }
+
+            acknowledged = true;
+            await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+        }
+
         try
         {
             var message = callback.Message;
             if (message is null || message.Chat.Type != ChatType.Private || callback.From is null
                 || !await pollCommandAuthorizer.IsAuthorizedAsync(new PollCommandContext(message.Chat.Id, callback.From.Id, true), cancellationToken))
             {
+                await AcknowledgeAsync();
                 return;
             }
 
             var tokens = (callback.Data ?? string.Empty).Split('|');
-            if (tokens.Length == 3 && tokens[0] == "r" && TryParseGuidToken(tokens[1], out var sessionId) && TryParseGuidToken(tokens[2], out var optionId))
+            if (tokens.Length == 3 && tokens[0] == "r" && PollResultsCallbackCodec.TryDecodeOption(string.Join('|', tokens[1..]), out var sessionId, out var optionId))
             {
+                await AcknowledgeAsync();
                 await SendVotersAsync(message.Chat.Id, sessionId, optionId, cancellationToken);
                 return;
             }
 
-            if (tokens.Length == 5 && tokens[0] == "b" && TryParseGuidToken(tokens[1], out var banSessionId) && TryParseGuidToken(tokens[2], out var banOptionId) && TryParseLongToken(tokens[3], out var voterId) && (tokens[4] == "0" || tokens[4] == "1"))
+            if (tokens.Length == 5 && tokens[0] == "b" && PollResultsCallbackCodec.TryDecode(string.Join('|', tokens[1..]), out var banSessionId, out var banOptionId, out var voterId, out var excluding))
             {
-                var excluding = tokens[4] == "1";
+                await AcknowledgeAsync();
+                var voters = await pollResultsService.GetVotersAsync(banSessionId, banOptionId, cancellationToken);
+                var voter = voters?.SingleOrDefault(x => x.VoterKind == PollVoterKind.User && x.TelegramPeerId == voterId);
+                if (voter is null)
+                {
+                    return;
+                }
+
                 var keyboard = new InlineKeyboardMarkup(new[]
                 {
-                    new[] { InlineKeyboardButton.WithCallbackData("Подтвердить", $"c|{ToCallbackToken(banSessionId)}|{ToCallbackToken(banOptionId)}|{ToCallbackToken(voterId)}|{tokens[4]}") },
+                    new[] { InlineKeyboardButton.WithCallbackData("Подтвердить", $"c|{PollResultsCallbackCodec.Encode(banSessionId, banOptionId, voterId, excluding)}") },
                     new[] { InlineKeyboardButton.WithCallbackData("Отмена", "n|0|0|0|0") }
                 });
-                await botClient.SendMessage(message.Chat.Id, excluding ? "Исключить пользователя из учёта результатов?" : "Вернуть пользователя в учёт результатов?", replyMarkup: keyboard, cancellationToken: cancellationToken);
+                await botClient.SendMessage(
+                    message.Chat.Id,
+                    excluding ? $"Исключить пользователя {FormatSafeVoterName(voter.DisplayName)} из учёта результатов?" : $"Вернуть пользователя {FormatSafeVoterName(voter.DisplayName)} в учёт результатов?",
+                    replyMarkup: keyboard,
+                    cancellationToken: cancellationToken);
                 return;
             }
 
-            if (tokens.Length == 5 && tokens[0] == "c" && TryParseGuidToken(tokens[1], out var confirmSessionId) && TryParseGuidToken(tokens[2], out var confirmOptionId) && TryParseLongToken(tokens[3], out var targetUserId) && (tokens[4] == "0" || tokens[4] == "1"))
+            if (tokens.Length == 5 && tokens[0] == "c" && PollResultsCallbackCodec.TryDecode(string.Join('|', tokens[1..]), out var confirmSessionId, out var confirmOptionId, out var targetUserId, out var confirmExcluding))
             {
+                await AcknowledgeAsync();
                 var voters = await pollResultsService.GetVotersAsync(confirmSessionId, confirmOptionId, cancellationToken);
                 if (voters is null || !voters.Any(x => x.VoterKind == PollVoterKind.User && x.TelegramPeerId == targetUserId))
                 {
                     return;
                 }
 
-                if (tokens[4] == "1")
+                if (confirmExcluding)
                 {
                     await shadowBannedUserRepository.SetExcludedAsync(targetUserId, callback.From.Id, clock.UtcNow, cancellationToken);
                 }
@@ -716,11 +748,16 @@ public sealed class TelegramUpdateRouter
                 {
                     await shadowBannedUserRepository.SetIncludedAsync(targetUserId, callback.From.Id, clock.UtcNow, cancellationToken);
                 }
+
+                await SendPrivateMessageAsync(message.Chat.Id, "Учёт голосов обновлён.", cancellationToken);
+                return;
             }
+
+            await AcknowledgeAsync();
         }
         finally
         {
-            await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+            await AcknowledgeAsync();
         }
     }
 
@@ -742,7 +779,7 @@ public sealed class TelegramUpdateRouter
             lines.Add($"{identity}{username}{(voter.IsExcluded ? " 🚫 не учитывается" : string.Empty)}");
             if (voter.VoterKind == PollVoterKind.User)
             {
-                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData(voter.IsExcluded ? "Вернуть в учёт" : "Исключить", $"b|{ToCallbackToken(sessionId)}|{ToCallbackToken(optionId)}|{ToCallbackToken(voter.TelegramPeerId)}|{(voter.IsExcluded ? 0 : 1)}") });
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData(FormatVoterAction(voter), $"b|{PollResultsCallbackCodec.Encode(sessionId, optionId, voter.TelegramPeerId, !voter.IsExcluded)}") });
             }
         }
 
@@ -781,42 +818,13 @@ public sealed class TelegramUpdateRouter
 
     private static string FormatUserName(User user) => string.Join(' ', new[] { user.FirstName, user.LastName }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    private static string ToCallbackToken(Guid value) => Convert.ToBase64String(value.ToByteArray()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    private static string FormatVoterAction(PollResultsVoter voter) =>
+        $"{(voter.IsExcluded ? "Вернуть" : "Исключить")}: {FormatSafeVoterName(voter.DisplayName, 42)}";
 
-    private static string ToCallbackToken(long value) => Convert.ToBase64String(BitConverter.GetBytes(value)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static bool TryParseGuidToken(string value, out Guid result)
+    private static string FormatSafeVoterName(string displayName, int maxLength = 96)
     {
-        result = Guid.Empty;
-        if (value.Length != 22) return false;
-        try
-        {
-            var bytes = Convert.FromBase64String(value.Replace('-', '+').Replace('_', '/') + "==");
-            if (bytes.Length != 16) return false;
-            result = new Guid(bytes);
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryParseLongToken(string value, out long result)
-    {
-        result = 0;
-        if (value.Length != 11) return false;
-        try
-        {
-            var bytes = Convert.FromBase64String(value.Replace('-', '+').Replace('_', '/') + "=");
-            if (bytes.Length != sizeof(long)) return false;
-            result = BitConverter.ToInt64(bytes, 0);
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
+        var normalized = string.Concat(displayName.Where(x => !char.IsControl(x))).Trim();
+        return normalized.Length <= maxLength ? normalized : string.Concat(normalized.AsSpan(0, maxLength - 1), "…");
     }
 
     private Task SendHtmlPrivateMessageAsync(long chatId, string html, CancellationToken cancellationToken)

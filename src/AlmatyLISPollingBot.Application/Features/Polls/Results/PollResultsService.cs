@@ -19,7 +19,7 @@ public sealed class PollResultsService
     public async Task<PollResultsSummary?> GetActiveAsync(CancellationToken cancellationToken)
     {
         var session = await pollSessionRepository.GetActiveAsync(cancellationToken);
-        if (session is null)
+        if (session is null || session.Status != PollLifecycleStatus.Active)
         {
             return null;
         }
@@ -47,8 +47,8 @@ public sealed class PollResultsService
 
     public async Task<IReadOnlyList<PollResultsVoter>?> GetVotersAsync(Guid sessionId, Guid optionId, CancellationToken cancellationToken)
     {
-        var session = await pollSessionRepository.GetActiveAsync(cancellationToken);
-        if (session is null || session.Id != sessionId || !session.OptionStates.Any(x => x.Id == optionId && x.IsActive && !x.IsResultsOption))
+        var session = await pollSessionRepository.GetByIdAsync(sessionId, cancellationToken);
+        if (session is null || !session.OptionStates.Any(x => x.Id == optionId && x.IsActive && !x.IsResultsOption))
         {
             return null;
         }

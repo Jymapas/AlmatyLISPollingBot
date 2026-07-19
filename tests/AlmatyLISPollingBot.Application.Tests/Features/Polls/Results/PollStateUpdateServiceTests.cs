@@ -57,6 +57,18 @@ public sealed class PollStateUpdateServiceTests
         repository.SaveCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ApplyPollAnswerAsync_ShouldPersistRetractionAsAnEmptyCurrentSelection()
+    {
+        var session = CreateSession();
+        var service = new PollStateUpdateService(new InMemoryPollSessionRepository(session), new TestClock());
+
+        await service.ApplyPollAnswerAsync(new PollAnswerSnapshot("poll", PollVoterKind.User, 1, "A", null, new[] { "a" }, 1), CancellationToken.None);
+        await service.ApplyPollAnswerAsync(new PollAnswerSnapshot("poll", PollVoterKind.User, 1, "A", null, Array.Empty<string>(), 2), CancellationToken.None);
+
+        (JsonSerializer.Deserialize<string[]>(session.VoterStates.Single().OptionPersistentIdsJson) ?? Array.Empty<string>()).Should().BeEmpty();
+    }
+
     private static PollSession CreateSession()
     {
         var session = new PollSession { TelegramPollId = "poll", Status = PollLifecycleStatus.Active };
@@ -77,6 +89,7 @@ public sealed class PollStateUpdateServiceTests
         public InMemoryPollSessionRepository(PollSession session) => this.session = session;
         public int SaveCount { get; private set; }
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(session);
+        public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult(pollSessionId == session.Id ? session : null);
         public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult(telegramPollId == session.TelegramPollId ? session : null);
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SaveChangesAsync(CancellationToken cancellationToken) { SaveCount++; return Task.CompletedTask; }

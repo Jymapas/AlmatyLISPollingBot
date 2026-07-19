@@ -30,11 +30,52 @@ public sealed class PollResultsServiceTests
         PollResultsService.FormatSummary(result, TimeZoneInfo.Utc).Should().Contain("&lt;A&gt;");
     }
 
+    [Fact]
+    public async Task GetActiveAsync_ShouldRejectDraftSessionEvenIfRepositoryReturnsIt()
+    {
+        var session = new PollSession { Status = PollLifecycleStatus.Draft };
+        var service = new PollResultsService(new Repository(session), new Lookup(Array.Empty<long>()));
+
+        var result = await service.GetActiveAsync(CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetVotersAsync_ShouldReadStoppedSessionByItsId()
+    {
+        var session = new PollSession { Status = PollLifecycleStatus.Stopped };
+        var option = new PollOptionState { PersistentId = "a", Text = "A", Position = 0 };
+        session.OptionStates.Add(option);
+        session.VoterStates.Add(new PollVoterState { VoterKind = PollVoterKind.User, TelegramPeerId = 42, DisplayName = "Voter", OptionPersistentIdsJson = JsonSerializer.Serialize(new[] { "a" }) });
+        var service = new PollResultsService(new Repository(session), new Lookup(Array.Empty<long>()));
+
+        var voters = await service.GetVotersAsync(session.Id, option.Id, CancellationToken.None);
+
+        voters.Should().ContainSingle().Which.TelegramPeerId.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task GetActiveAsync_ShouldSortAdjustedCountThenPollPosition()
+    {
+        var session = new PollSession { Status = PollLifecycleStatus.Active };
+        session.OptionStates.Add(new PollOptionState { PersistentId = "late", Text = "Late", Position = 2, TelegramVoterCount = 1 });
+        session.OptionStates.Add(new PollOptionState { PersistentId = "early", Text = "Early", Position = 1, TelegramVoterCount = 1 });
+        session.OptionStates.Add(new PollOptionState { PersistentId = "top", Text = "Top", Position = 0, TelegramVoterCount = 2 });
+        var service = new PollResultsService(new Repository(session), new Lookup(Array.Empty<long>()));
+
+        var result = await service.GetActiveAsync(CancellationToken.None);
+
+        result!.Options.Select(x => x.Text).Should().Equal("Top", "Early", "Late");
+    }
+
     private sealed class Repository : IPollSessionRepository
     {
         private readonly PollSession session;
         public Repository(PollSession session) => this.session = session;
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(session);
+        public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult(pollSessionId == session.Id ? session : null);
+        public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }

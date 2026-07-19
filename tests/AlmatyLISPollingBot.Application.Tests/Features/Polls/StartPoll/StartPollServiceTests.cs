@@ -38,6 +38,10 @@ public sealed class StartPollServiceTests
         session.Candidates.Should().ContainSingle();
         session.Candidates[0].IsAvailableAtFirstSlot.Should().BeTrue();
         session.Candidates[0].IsAvailableAtSecondSlot.Should().BeTrue();
+        session.OptionStates.Select(x => new { x.PersistentId, x.IsResultsOption })
+            .Should().Equal(
+                new { PersistentId = "option-0", IsResultsOption = false },
+                new { PersistentId = "option-1", IsResultsOption = true });
 
         fixture.PollPublisher.HtmlMessages.Should().ContainSingle();
         fixture.PollPublisher.HtmlMessages[0].Should().NotContain("<b>ID:</b>");
@@ -364,6 +368,8 @@ public sealed class StartPollServiceTests
         }
 
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult(activePoll);
+        public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
+        public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
 
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -489,7 +495,10 @@ public sealed class StartPollServiceTests
             PollRequests.Add(request);
             return ThrowOnPoll
                 ? Task.FromException<PublishedPoll>(new InvalidOperationException("Telegram unavailable."))
-                : Task.FromResult(new PublishedPoll("telegram-poll-id", 102));
+                : Task.FromResult(new PublishedPoll(
+                    "telegram-poll-id",
+                    102,
+                    request.Options.Select((text, index) => new PublishedPollOption($"option-{index}", text, index)).ToArray()));
         }
 
         public Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken)
