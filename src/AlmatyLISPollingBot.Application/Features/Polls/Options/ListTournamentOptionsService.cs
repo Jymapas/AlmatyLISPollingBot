@@ -78,8 +78,33 @@ public sealed class ListTournamentOptionsService
             candidates,
             tournamentIdDisplayMode,
             paymentCategoriesDisplayMode,
+            onlyExcluded
+                ? TournamentDateRangeDisplayMode.WithoutDateRange
+                : TournamentDateRangeDisplayMode.WithDateRange,
+            timeZone,
             cancellationToken);
 
-        return new TournamentOptionsResult(targetDate, formattingResult.Pages);
+        var pages = onlyExcluded
+            ? formattingResult.Pages
+            : AddOptionsHeader(formattingResult.Pages, targetDate);
+
+        return new TournamentOptionsResult(targetDate, pages);
+    }
+
+    private static IReadOnlyList<string> AddOptionsHeader(IReadOnlyList<string> pages, DateOnly targetDate)
+    {
+        if (pages.Count == 0)
+        {
+            return pages;
+        }
+
+        var header = $"<b>Турниры на {targetDate:dd.MM.yyyy}</b>";
+        var firstPage = string.Concat(header, "\n\n", pages[0]);
+        if (firstPage.Length <= 4096)
+        {
+            return new[] { firstPage }.Concat(pages.Skip(1)).ToArray();
+        }
+
+        return new[] { header }.Concat(pages).ToArray();
     }
 }

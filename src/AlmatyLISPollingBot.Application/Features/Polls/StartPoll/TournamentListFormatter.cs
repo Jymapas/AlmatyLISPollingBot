@@ -26,6 +26,23 @@ public sealed class TournamentListFormatter
         TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
         CancellationToken cancellationToken)
     {
+        return await FormatAsync(
+            candidates,
+            tournamentIdDisplayMode,
+            paymentCategoriesDisplayMode,
+            TournamentDateRangeDisplayMode.WithoutDateRange,
+            timeZone: null,
+            cancellationToken);
+    }
+
+    public async Task<TournamentListFormattingResult> FormatAsync(
+        IReadOnlyList<PollTournamentCandidate> candidates,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
+        TournamentDateRangeDisplayMode dateRangeDisplayMode,
+        TimeZoneInfo? timeZone,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(candidates);
         if (tournamentIdDisplayMode is not (TournamentIdDisplayMode.WithTournamentId or TournamentIdDisplayMode.WithoutTournamentId))
         {
@@ -38,6 +55,16 @@ public sealed class TournamentListFormatter
                 nameof(paymentCategoriesDisplayMode),
                 paymentCategoriesDisplayMode,
                 "Unsupported tournament payment categories display mode.");
+        }
+
+        if (dateRangeDisplayMode is not (TournamentDateRangeDisplayMode.WithoutDateRange or TournamentDateRangeDisplayMode.WithDateRange))
+        {
+            throw new ArgumentOutOfRangeException(nameof(dateRangeDisplayMode), dateRangeDisplayMode, "Unsupported tournament date range display mode.");
+        }
+
+        if (dateRangeDisplayMode == TournamentDateRangeDisplayMode.WithDateRange && timeZone is null)
+        {
+            throw new ArgumentNullException(nameof(timeZone));
         }
 
         var selectedCurrencies = candidates
@@ -66,6 +93,8 @@ public sealed class TournamentListFormatter
                 rates,
                 tournamentIdDisplayMode,
                 paymentCategoriesDisplayMode,
+                dateRangeDisplayMode,
+                timeZone,
                 ref hasUnconvertedPrices));
         }
 
@@ -79,6 +108,8 @@ public sealed class TournamentListFormatter
         IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
         TournamentIdDisplayMode tournamentIdDisplayMode,
         TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
+        TournamentDateRangeDisplayMode dateRangeDisplayMode,
+        TimeZoneInfo? timeZone,
         ref bool hasUnconvertedPrices)
     {
         var tournament = candidate.Tournament;
@@ -101,6 +132,12 @@ public sealed class TournamentListFormatter
         builder.Append(tournament.QuestionCount == 0 ? "не указано" : tournament.QuestionCount.ToString(CultureInfo.InvariantCulture));
         builder.Append("   <b>Сложность:</b> ");
         builder.Append(tournament.DifficultyForecast?.ToString("0.##", CultureInfo.InvariantCulture) ?? "не указана");
+
+        if (dateRangeDisplayMode == TournamentDateRangeDisplayMode.WithDateRange)
+        {
+            builder.Append("\n<b>Период:</b> ");
+            builder.Append(FormatDateRange(tournament.DateStart, tournament.DateEnd, timeZone!));
+        }
 
         if (paymentCategories.Count > 0)
         {
@@ -127,6 +164,17 @@ public sealed class TournamentListFormatter
         }
 
         return builder.ToString();
+    }
+
+    private static string FormatDateRange(DateTimeOffset dateStart, DateTimeOffset dateEnd, TimeZoneInfo timeZone)
+    {
+        var start = TimeZoneInfo.ConvertTime(dateStart, timeZone);
+        var end = TimeZoneInfo.ConvertTime(dateEnd, timeZone);
+
+        return string.Concat(
+            start.ToString("dd.MM HH:mm", CultureInfo.InvariantCulture),
+            " — ",
+            end.ToString("dd.MM HH:mm", CultureInfo.InvariantCulture));
     }
 
     private static string GetCandidateNumber(int index)

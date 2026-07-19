@@ -31,6 +31,8 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
         result.Pages[0].Should().Contain("<b>Первый</b>");
         result.Pages[0].Should().Contain("<b>ID:</b> <code>1</code>");
+        result.Pages[0].Should().StartWith("<b>Турниры на 07.03.2026</b>");
+        result.Pages[0].Should().Contain("<b>Период:</b> 07.03 12:00 — 07.03 16:00");
     }
 
     [Fact]
@@ -93,6 +95,8 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
         result.Pages[0].Should().NotContain("<b>ID:</b>");
         result.Pages[0].Should().Contain("студенты — 3000₸");
+        result.Pages[0].Should().NotContain("<b>Турниры на");
+        result.Pages[0].Should().NotContain("<b>Период:</b>");
         result.Pages[0].Should().NotContain("Обычный");
         result.Pages[0].Should().NotContain("Неподходящий");
     }

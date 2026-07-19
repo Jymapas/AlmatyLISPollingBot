@@ -182,6 +182,24 @@ public sealed class TournamentListFormatterTests
         result.Pages[0].Should().NotContain("3000₸");
     }
 
+    [Fact]
+    public async Task FormatAsync_ShouldDisplayTournamentDateRangeInRequestedTimeZone()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidate = CreateCandidate();
+        var utcTimeZone = TimeZoneInfo.Utc;
+
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            TournamentDateRangeDisplayMode.WithDateRange,
+            utcTimeZone,
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain("<b>Период:</b> 18.07 03:00 — 18.07 13:00");
+    }
+
     private static PollTournamentCandidate CreateCandidate(
         string title = "Турнир",
         IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null,
