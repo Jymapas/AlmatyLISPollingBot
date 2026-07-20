@@ -33,6 +33,26 @@ public sealed class StopPollServiceTests
         repository.SaveChangesCalls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task StopActivePollAsync_ShouldPersistStoppedStatusWhenTelegramCannotFindThePoll()
+    {
+        var session = new PollSession
+        {
+            ChatId = -100123,
+            PollMessageId = 44,
+            Status = PollLifecycleStatus.Active
+        };
+        var repository = new StubPollSessionRepository(session);
+        var publisher = new StubPollPublisher { ThrowPollNotFoundOnStop = true };
+        var sut = new StopPollService(new StubClock(), repository, publisher);
+
+        var stopped = await sut.StopActivePollAsync(CancellationToken.None);
+
+        stopped.Should().BeTrue();
+        session.Status.Should().Be(PollLifecycleStatus.Stopped);
+        repository.SaveChangesCalls.Should().Be(1);
+    }
+
     private sealed class StubClock : IClock
     {
         public DateTimeOffset UtcNow { get; } = new(2026, 3, 2, 5, 0, 0, TimeSpan.Zero);
@@ -50,8 +70,14 @@ public sealed class StopPollServiceTests
         public int SaveChangesCalls { get; private set; }
 
         public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(session);
+        public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
+        public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
 
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task AddOptionStateAsync(PollOptionState optionState, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task AddVoterStateAsync(PollVoterState voterState, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task SaveChangesAsync(CancellationToken cancellationToken)
         {
@@ -63,6 +89,7 @@ public sealed class StopPollServiceTests
     private sealed class StubPollPublisher : IPollPublisher
     {
         public List<(long ChatId, int MessageId)> StoppedPolls { get; } = new();
+        public bool ThrowPollNotFoundOnStop { get; set; }
 
         public Task<int> SendHtmlMessageAsync(long chatId, string message, CancellationToken cancellationToken)
             => Task.FromException<int>(new NotSupportedException());
@@ -73,7 +100,9 @@ public sealed class StopPollServiceTests
         public Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken)
         {
             StoppedPolls.Add((chatId, pollMessageId));
-            return Task.CompletedTask;
+            return ThrowPollNotFoundOnStop
+                ? Task.FromException(new PollNotFoundException(new InvalidOperationException()))
+                : Task.CompletedTask;
         }
 
         public Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken)

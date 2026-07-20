@@ -11,7 +11,8 @@ public sealed class ChgkTournamentClientTests
     [Fact]
     public async Task GetTournamentsIntersectingDateAsync_ShouldMapJsonLdAndFollowNextPage()
     {
-        using var httpClient = new HttpClient(new StubHttpMessageHandler())
+        var handler = new StubHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("https://api.rating.chgk.info/")
         };
@@ -28,12 +29,17 @@ public sealed class ChgkTournamentClientTests
         firstTournament.QuestionCount.Should().Be(36);
         tournaments.Last().Id.Should().Be(2);
         tournaments.Last().Languages.Should().ContainSingle(x => x.Id == "uk" && x.Name == "Украинский");
+        handler.RequestUris.Should().HaveCount(2);
+        handler.RequestUris[0].Query.Should().Contain("itemsPerPage=512");
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
+        public List<Uri> RequestUris { get; } = new();
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestUris.Add(request.RequestUri!);
             if (!request.Headers.Accept.Contains(new MediaTypeWithQualityHeaderValue("application/ld+json")))
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

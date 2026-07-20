@@ -112,6 +112,14 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Reason")
                         .HasColumnType("text");
 
@@ -181,6 +189,48 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
                     b.ToTable("poll_candidates", (string)null);
                 });
 
+            modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollOptionState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsResultsOption")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("LastSnapshotAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PersistentId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("PollSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TelegramVoterCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PollSessionId", "PersistentId")
+                        .IsUnique();
+
+                    b.ToTable("poll_option_states", (string)null);
+                });
+
             modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -189,6 +239,11 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
 
                     b.Property<long>("ChatId")
                         .HasColumnType("bigint");
+
+                    b.Property<int>("DesiredTournamentCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(2);
 
                     b.Property<int?>("ListMessageId")
                         .HasColumnType("integer");
@@ -219,14 +274,74 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
                     b.ToTable("poll_sessions", (string)null);
                 });
 
+            modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollVoterState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<int>("LastUpdateId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("OptionPersistentIdsJson")
+                        .IsRequired()
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<Guid>("PollSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("TelegramPeerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Username")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("VoterKind")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PollSessionId", "VoterKind", "TelegramPeerId")
+                        .IsUnique();
+
+                    b.ToTable("poll_voter_states", (string)null);
+                });
+
             modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.ShadowBannedUser", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("ExcludedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ExcludedByTelegramUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Note")
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ReturnedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ReturnedByTelegramUserId")
+                        .HasColumnType("bigint");
 
                     b.Property<long>("TelegramUserId")
                         .HasColumnType("bigint");
@@ -268,9 +383,31 @@ namespace AlmatyLISPollingBot.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollOptionState", b =>
+                {
+                    b.HasOne("AlmatyLISPollingBot.Domain.Entities.PollSession", null)
+                        .WithMany("OptionStates")
+                        .HasForeignKey("PollSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollVoterState", b =>
+                {
+                    b.HasOne("AlmatyLISPollingBot.Domain.Entities.PollSession", null)
+                        .WithMany("VoterStates")
+                        .HasForeignKey("PollSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("AlmatyLISPollingBot.Domain.Entities.PollSession", b =>
                 {
                     b.Navigation("Candidates");
+
+                    b.Navigation("OptionStates");
+
+                    b.Navigation("VoterStates");
                 });
 #pragma warning restore 612, 618
         }

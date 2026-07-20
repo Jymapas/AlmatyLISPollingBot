@@ -14,12 +14,15 @@ public sealed class LookupRepository : IReadOnlyLookupRepository
 
     public async Task<IReadOnlyCollection<int>> GetExcludedTournamentIdsAsync(CancellationToken cancellationToken)
     {
-        return await dbContext.ExcludedTournaments.Select(x => x.TournamentId).ToArrayAsync(cancellationToken);
+        return await dbContext.ExcludedTournaments
+            .Where(x => !x.IsDeleted)
+            .Select(x => x.TournamentId)
+            .ToArrayAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<long>> GetShadowBannedUserIdsAsync(CancellationToken cancellationToken)
     {
-        return await dbContext.ShadowBannedUsers.Select(x => x.TelegramUserId).ToArrayAsync(cancellationToken);
+        return await dbContext.ShadowBannedUsers.Where(x => !x.IsDeleted).Select(x => x.TelegramUserId).ToArrayAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<long>> GetAdminUserIdsAsync(CancellationToken cancellationToken)

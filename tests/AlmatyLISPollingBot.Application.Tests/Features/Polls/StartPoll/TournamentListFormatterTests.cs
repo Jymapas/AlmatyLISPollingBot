@@ -24,7 +24,11 @@ public sealed class TournamentListFormatterTests
             firstSlot: true,
             secondSlot: false);
 
-        var result = await sut.FormatAsync(new[] { candidate }, CancellationToken.None);
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
 
         result.HasUnconvertedPrices.Should().BeFalse();
         result.Pages.Should().ContainSingle();
@@ -51,7 +55,11 @@ public sealed class TournamentListFormatterTests
         var candidate = CreateCandidate(
             paymentCategories: new[] { new TournamentPaymentCategory(900m, "RUB", "по умолчанию") });
 
-        var result = await sut.FormatAsync(new[] { candidate }, CancellationToken.None);
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
 
         result.HasUnconvertedPrices.Should().BeFalse();
         result.Pages[0].Should().Contain("900₽ (≈4959₸)");
@@ -65,7 +73,11 @@ public sealed class TournamentListFormatterTests
         var candidate = CreateCandidate(
             paymentCategories: new[] { new TournamentPaymentCategory(10m, "USD", "по умолчанию") });
 
-        var result = await sut.FormatAsync(new[] { candidate }, CancellationToken.None);
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
 
         result.HasUnconvertedPrices.Should().BeTrue();
         result.Pages[0].Should().Contain("10$");
@@ -83,7 +95,11 @@ public sealed class TournamentListFormatterTests
             CreateCandidate(paymentCategories: new[] { new TournamentPaymentCategory(10m, "USD", "по умолчанию") })
         };
 
-        var formattingTask = sut.FormatAsync(candidates, CancellationToken.None);
+        var formattingTask = sut.FormatAsync(
+            candidates,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
         await provider.FirstRequestStarted;
 
         provider.RequestCount.Should().Be(1);
@@ -96,12 +112,16 @@ public sealed class TournamentListFormatterTests
     [InlineData("Турнир (АСИНХРОН И ОНЛАЙН)  ", "Турнир")]
     [InlineData("Турнир (асинхрон/онлайн)  ", "Турнир")]
     [InlineData("Турнир (АсИнХрОн)  ", "Турнир")]
+    [InlineData("Турнир (С)  ", "Турнир")]
+    [InlineData("Турнир (А)  ", "Турнир")]
     public async Task FormatAsync_ShouldRemoveTerminalTechnicalTitleSuffix(string title, string expectedTitle)
     {
         var sut = new TournamentListFormatter(new StubExchangeRateProvider());
 
         var result = await sut.FormatAsync(
             new[] { CreateCandidate(title: title) },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.Pages.Should().ContainSingle();
@@ -117,9 +137,112 @@ public sealed class TournamentListFormatterTests
 
         var result = await sut.FormatAsync(
             new[] { CreateCandidate(title: title) },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
             CancellationToken.None);
 
         result.Pages[0].Should().Contain($"<b>{title}</b>");
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldOmitTournamentIdWhenRequested()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+
+        var result = await sut.FormatAsync(
+            new[] { CreateCandidate() },
+            TournamentIdDisplayMode.WithoutTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
+
+        result.Pages.Should().ContainSingle();
+        result.Pages[0].Should().NotContain("<b>ID:</b>");
+        result.Pages[0].Should().Contain("https://rating.chgk.info/tournament/42");
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldShowOnlyPrimaryPaymentCategoryWhenRequested()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidate = CreateCandidate(
+            paymentCategories: new[]
+            {
+                new TournamentPaymentCategory(900m, "RUB", "по умолчанию"),
+                new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                new TournamentPaymentCategory(3000m, "KZT", "студенты")
+            });
+
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.PrimaryOnly,
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
+        result.Pages[0].Should().NotContain("900₽");
+        result.Pages[0].Should().NotContain("студенты");
+        result.Pages[0].Should().NotContain("3000₸");
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldDisplayTournamentDateRangeInRequestedTimeZone()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidate = CreateCandidate();
+        var utcTimeZone = TimeZoneInfo.Utc;
+
+        var result = await sut.FormatAsync(
+            new[] { candidate },
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            TournamentDateRangeDisplayMode.WithDateRange,
+            utcTimeZone,
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain("<b>Период:</b> 18.07 03:00 — 18.07 13:00");
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldUseNumericPrefixAfterNineCandidates()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidates = Enumerable.Range(1, 11)
+            .Select(index => CreateCandidate(title: $"Турнир {index}"))
+            .ToArray();
+
+        var result = await sut.FormatAsync(
+            candidates,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            CancellationToken.None);
+
+        result.Pages[0].Should().Contain("11. <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 11</b></a>");
+    }
+
+    [Fact]
+    public async Task FormatAsync_ShouldStartANewPageBeforeExceedingTelegramFormattingEntityLimit()
+    {
+        var sut = new TournamentListFormatter(new StubExchangeRateProvider());
+        var candidates = Enumerable.Range(1, 10)
+            .Select(index => CreateCandidate(
+                title: $"Турнир {index}",
+                paymentCategories: new[] { new TournamentPaymentCategory(5000m, "KZT", "по умолчанию") },
+                firstSlot: true,
+                secondSlot: false))
+            .ToArray();
+
+        var result = await sut.FormatAsync(
+            candidates,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.All,
+            TournamentDateRangeDisplayMode.WithDateRange,
+            TimeZoneInfo.Utc,
+            CancellationToken.None);
+
+        result.Pages.Should().HaveCount(2);
+        result.Pages[0].Should().Contain("Турнир 9");
+        result.Pages[0].Should().NotContain("Турнир 10");
+        result.Pages[1].Should().Contain("10. <a href=\"https://rating.chgk.info/tournament/42\"><b>Турнир 10</b></a>");
     }
 
     private static PollTournamentCandidate CreateCandidate(

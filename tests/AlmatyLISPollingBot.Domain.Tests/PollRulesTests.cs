@@ -20,6 +20,19 @@ public sealed class PollRulesTests
     }
 
     [Theory]
+    [InlineData(1, true, false)]
+    [InlineData(2, true, true)]
+    [InlineData(3, false, true)]
+    public void DesiredTournamentCountRules_ShouldValidateCountAndVotingMode(
+        int desiredTournamentCount,
+        bool isSupported,
+        bool allowsMultipleAnswers)
+    {
+        PollRules.IsSupportedDesiredTournamentCount(desiredTournamentCount).Should().Be(isSupported);
+        PollRules.AllowsMultipleAnswers(desiredTournamentCount).Should().Be(allowsMultipleAnswers);
+    }
+
+    [Theory]
     [InlineData(3, true)]
     [InlineData(6, true)]
     [InlineData(8, false)]

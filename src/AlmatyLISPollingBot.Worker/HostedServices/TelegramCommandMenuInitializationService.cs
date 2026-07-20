@@ -9,20 +9,25 @@ namespace AlmatyLISPollingBot.Worker.HostedServices;
 
 public sealed class TelegramCommandMenuInitializationService : IHostedService
 {
-    private static readonly BotCommand[] AdministratorCommands =
+    internal static readonly BotCommand[] AdministratorCommands =
     {
-        new(BotCommands.Poll, "Создать опрос")
+        new(BotCommands.Poll, "Создать опрос"),
+        new(BotCommands.Stop, "Остановить опрос")
     };
 
-    private static readonly BotCommand[] PrivateAdministratorCommands =
+    internal static readonly BotCommand[] PrivateAdministratorCommands =
     {
         new(BotCommands.Poll, "Создать опрос"),
         new(BotCommands.Stop, "Остановить опрос"),
+        new(BotCommands.Preview, "Предпросмотр опроса"),
         new(BotCommands.Options, "Показать турниры"),
         new(BotCommands.Exclude, "Исключить турниры"),
+        new(BotCommands.Excluded, "Показать исключённые турниры"),
+        new(BotCommands.Unexclude, "Вернуть турниры в пул"),
         new(BotCommands.Force, "Добавить синхрон в опрос"),
         new(BotCommands.Cancel, "Отменить диалог"),
-        new(BotCommands.MakePost, "Сформировать пост")
+        new(BotCommands.MakePost, "Сформировать пост"),
+        new(BotCommands.Results, "Результаты опроса")
     };
 
     private readonly ITelegramBotClient botClient;

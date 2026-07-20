@@ -31,7 +31,13 @@ public sealed class StopPollService
 
         if (activePoll.PollMessageId is not null)
         {
-            await pollPublisher.StopPollAsync(activePoll.ChatId, activePoll.PollMessageId.Value, cancellationToken);
+            try
+            {
+                await pollPublisher.StopPollAsync(activePoll.ChatId, activePoll.PollMessageId.Value, cancellationToken);
+            }
+            catch (PollNotFoundException)
+            {
+            }
         }
 
         activePoll.Status = PollLifecycleStatus.Stopped;

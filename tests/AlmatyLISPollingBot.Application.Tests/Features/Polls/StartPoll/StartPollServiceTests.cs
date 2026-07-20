@@ -17,7 +17,14 @@ public sealed class StartPollServiceTests
     [Fact]
     public async Task StartAsync_ShouldPublishSingleCandidatePollWithAddingOptionsEnabled()
     {
-        var fixture = new PollFixture(new[] { CreateTournament() });
+        var fixture = new PollFixture(new[]
+        {
+            CreateTournament(paymentCategories: new[]
+            {
+                new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                new TournamentPaymentCategory(3000m, "KZT", "студенты")
+            })
+        });
 
         var session = await fixture.CreateService().StartAsync(CancellationToken.None);
 
@@ -27,11 +34,18 @@ public sealed class StartPollServiceTests
         session.PollMessageId.Should().Be(102);
         session.TelegramPollId.Should().Be("telegram-poll-id");
         session.ScheduledStopAtUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 16, 0, 0, TimeSpan.Zero));
+        session.DesiredTournamentCount.Should().Be(2);
         session.Candidates.Should().ContainSingle();
         session.Candidates[0].IsAvailableAtFirstSlot.Should().BeTrue();
         session.Candidates[0].IsAvailableAtSecondSlot.Should().BeTrue();
+        session.OptionStates.Select(x => new { x.PersistentId, x.IsResultsOption })
+            .Should().Equal(
+                new { PersistentId = "option-0", IsResultsOption = false },
+                new { PersistentId = "option-1", IsResultsOption = true });
 
         fixture.PollPublisher.HtmlMessages.Should().ContainSingle();
+        fixture.PollPublisher.HtmlMessages[0].Should().NotContain("<b>ID:</b>");
+        fixture.PollPublisher.HtmlMessages[0].Should().Contain("студенты — 3000₸");
         fixture.PollPublisher.PollRequests.Should().ContainSingle();
         var request = fixture.PollPublisher.PollRequests[0];
         request.Question.Should().Be("Выбираем 2 синхрона на субботу, 07.03.2026:");
@@ -42,6 +56,57 @@ public sealed class StartPollServiceTests
         request.AllowAddingOptions.Should().BeTrue();
         request.CloseDateUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 16, 0, 0, TimeSpan.Zero));
         fixture.ChatBotClient.Alerts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldUseExplicitTargetDateForPollAndStopTime()
+    {
+        var targetDate = new DateOnly(2026, 3, 10);
+        var fixture = new PollFixture(new[] { CreateTournament(targetDate: targetDate) });
+
+        var result = await fixture.CreateService().StartAsync(
+            new StartPollRequest(targetDate, 2),
+            CancellationToken.None);
+
+        result.RejectionReason.Should().BeNull();
+        result.PollSession.Should().NotBeNull();
+        result.PollSession!.TargetDate.Should().Be(targetDate);
+        result.PollSession.DesiredTournamentCount.Should().Be(2);
+        result.PollSession.ScheduledStopAtUtc.Should().Be(new DateTimeOffset(2026, 3, 9, 16, 0, 0, TimeSpan.Zero));
+        fixture.TournamentClient.RequestedTargetDates.Should().ContainSingle().Which.Should().Be(targetDate);
+        fixture.PollPublisher.PollRequests.Should().ContainSingle().Which.Question
+            .Should().Be("Выбираем 2 синхрона на 10.03.2026:");
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldCreateSingleChoicePollWhenOneTournamentIsRequested()
+    {
+        var fixture = new PollFixture(new[] { CreateTournament() });
+
+        var result = await fixture.CreateService().StartAsync(
+            new StartPollRequest(null, 1),
+            CancellationToken.None);
+
+        result.RejectionReason.Should().BeNull();
+        result.PollSession!.DesiredTournamentCount.Should().Be(1);
+        var request = fixture.PollPublisher.PollRequests.Should().ContainSingle().Which;
+        request.Question.Should().Be("Выбираем 1 синхрон на субботу, 07.03.2026:");
+        request.AllowsMultipleAnswers.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldRejectDateWhenAutomaticStopTimeHasPassed()
+    {
+        var fixture = new PollFixture(new[] { CreateTournament() });
+
+        var result = await fixture.CreateService().StartAsync(
+            new StartPollRequest(new DateOnly(2026, 3, 2), 2),
+            CancellationToken.None);
+
+        result.PollSession.Should().BeNull();
+        result.RejectionReason.Should().Be(PollStartRejectionReason.TargetDateAlreadyStopped);
+        fixture.TournamentClient.RequestedTargetDates.Should().BeEmpty();
+        fixture.PollPublisher.PollRequests.Should().BeEmpty();
     }
 
     [Fact]
@@ -146,26 +211,61 @@ public sealed class StartPollServiceTests
         fixture.ForcedTournamentRepository.RemovedIds.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task StartAsync_ShouldReplaceStaleActivePollWhenTelegramCannotFindIt()
+    {
+        var activePoll = new PollSession
+        {
+            ChatId = -100456,
+            PollMessageId = 55,
+            Status = AlmatyLISPollingBot.Domain.Enums.PollLifecycleStatus.Active
+        };
+        var fixture = new PollFixture(new[] { CreateTournament() }, activePoll);
+        fixture.PollPublisher.ThrowPollNotFoundOnStop = true;
+
+        var session = await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        session.Should().NotBeNull();
+        activePoll.Status.Should().Be(AlmatyLISPollingBot.Domain.Enums.PollLifecycleStatus.Stopped);
+        activePoll.StoppedAtUtc.Should().Be(new DateTimeOffset(2026, 3, 2, 5, 0, 0, TimeSpan.Zero));
+        fixture.PollPublisher.PollRequests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldNotRunSharedPersistenceReadsConcurrently()
+    {
+        var fixture = new PollFixture(
+            new[] { CreateTournament() },
+            detectConcurrentPersistenceReads: true);
+
+        var session = await fixture.CreateService().StartAsync(CancellationToken.None);
+
+        session.Should().NotBeNull();
+    }
+
     private static TournamentDetails CreateTournament(
         int id = 7,
         string title = "Синхрон",
         decimal difficulty = 5m,
         int type = 3,
         bool hasRussianLanguage = true,
-        bool hasChgkGgRating = true)
+        bool hasChgkGgRating = true,
+        DateOnly? targetDate = null,
+        IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null)
     {
+        var date = targetDate ?? new DateOnly(2026, 3, 7);
         return new TournamentDetails(
             id,
             title,
             type,
-            new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.FromHours(5)),
-            new DateTimeOffset(2026, 3, 7, 16, 0, 0, TimeSpan.FromHours(5)),
+            new DateTimeOffset(date.ToDateTime(new TimeOnly(12, 0)), TimeSpan.FromHours(5)),
+            new DateTimeOffset(date.ToDateTime(new TimeOnly(16, 0)), TimeSpan.FromHours(5)),
             difficulty,
             hasRussianLanguage ? new[] { new TournamentLanguage("ru", "Русский") } : Array.Empty<TournamentLanguage>(),
             hasChgkGgRating ? new[] { "chgkgg" } : Array.Empty<string>(),
             new[] { new TournamentEditor("Иван", "Иванович", "Иванов") },
             new Dictionary<int, int> { [1] = 36 },
-            Array.Empty<TournamentPaymentCategory>());
+            paymentCategories ?? Array.Empty<TournamentPaymentCategory>());
     }
 
     private sealed class PollFixture
@@ -174,26 +274,41 @@ public sealed class StartPollServiceTests
 
         public PollFixture(
             IReadOnlyCollection<TournamentDetails> tournaments,
-            IReadOnlyCollection<int>? forcedTournamentIds = null)
+            PollSession? activePoll = null,
+            IReadOnlyCollection<int>? forcedTournamentIds = null,
+            bool detectConcurrentPersistenceReads = false)
         {
             this.tournaments = tournaments;
-            ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds);
+            var persistenceReadDetector = detectConcurrentPersistenceReads
+                ? new ConcurrentPersistenceReadDetector()
+                : null;
+            ForcedTournamentRepository = new StubForcedTournamentRepository(forcedTournamentIds, persistenceReadDetector);
+            TournamentClient = new StubTournamentClient(tournaments);
+            PollSessionRepository = new StubPollSessionRepository(activePoll);
+            LookupRepository = new StubLookupRepository(persistenceReadDetector);
         }
 
         public StubPollPublisher PollPublisher { get; } = new();
         public StubChatBotClient ChatBotClient { get; } = new();
         public StubForcedTournamentRepository ForcedTournamentRepository { get; }
+        public StubTournamentClient TournamentClient { get; }
+        public StubPollSessionRepository PollSessionRepository { get; }
+        public StubLookupRepository LookupRepository { get; }
 
         public StartPollService CreateService()
         {
+            var clock = new StubClock();
             return new StartPollService(
-                new StubClock(),
-                new StubSettingsRepository(),
-                new StubLookupRepository(),
+                clock,
                 ForcedTournamentRepository,
-                new StubPollSessionRepository(),
-                new StubTournamentClient(tournaments),
-                new PollCandidateSelectionService(),
+                PollSessionRepository,
+                new PollCandidatePreparationService(
+                    clock,
+                    new StubSettingsRepository(),
+                    LookupRepository,
+                    ForcedTournamentRepository,
+                    TournamentClient,
+                    new PollCandidateSelectionService()),
                 new TournamentListFormatter(new StubExchangeRateProvider()),
                 PollPublisher,
                 ChatBotClient);
@@ -221,8 +336,20 @@ public sealed class StartPollServiceTests
 
     private sealed class StubLookupRepository : IReadOnlyLookupRepository
     {
+        private readonly ConcurrentPersistenceReadDetector? persistenceReadDetector;
+
+        public StubLookupRepository(ConcurrentPersistenceReadDetector? persistenceReadDetector = null)
+        {
+            this.persistenceReadDetector = persistenceReadDetector;
+        }
+
         public Task<IReadOnlyCollection<int>> GetExcludedTournamentIdsAsync(CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyCollection<int>>(Array.Empty<int>());
+        {
+            return persistenceReadDetector?.RunAsync(
+                () => (IReadOnlyCollection<int>)Array.Empty<int>(),
+                cancellationToken)
+                ?? Task.FromResult<IReadOnlyCollection<int>>(Array.Empty<int>());
+        }
 
         public Task<IReadOnlyCollection<long>> GetShadowBannedUserIdsAsync(CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyCollection<long>>(Array.Empty<long>());
@@ -233,9 +360,22 @@ public sealed class StartPollServiceTests
 
     private sealed class StubPollSessionRepository : IPollSessionRepository
     {
-        public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
+        private readonly PollSession? activePoll;
+
+        public StubPollSessionRepository(PollSession? activePoll = null)
+        {
+            this.activePoll = activePoll;
+        }
+
+        public Task<PollSession?> GetActiveAsync(CancellationToken cancellationToken) => Task.FromResult(activePoll);
+        public Task<PollSession?> GetByIdAsync(Guid pollSessionId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
+        public Task<PollSession?> GetByTelegramPollIdAsync(string telegramPollId, CancellationToken cancellationToken) => Task.FromResult<PollSession?>(null);
 
         public Task AddAsync(PollSession pollSession, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task AddOptionStateAsync(PollOptionState optionState, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task AddVoterStateAsync(PollVoterState voterState, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
@@ -243,8 +383,11 @@ public sealed class StartPollServiceTests
     private sealed class StubForcedTournamentRepository : IForcedTournamentRepository
     {
         private readonly IReadOnlyCollection<ForcedTournament> queuedTournaments;
+        private readonly ConcurrentPersistenceReadDetector? persistenceReadDetector;
 
-        public StubForcedTournamentRepository(IReadOnlyCollection<int>? forcedTournamentIds = null)
+        public StubForcedTournamentRepository(
+            IReadOnlyCollection<int>? forcedTournamentIds = null,
+            ConcurrentPersistenceReadDetector? persistenceReadDetector = null)
         {
             queuedTournaments = (forcedTournamentIds ?? Array.Empty<int>())
                 .Select((tournamentId, index) => new ForcedTournament
@@ -253,12 +396,18 @@ public sealed class StartPollServiceTests
                     QueuedAtUtc = new DateTimeOffset(2026, 3, 1, 0, index, 0, TimeSpan.Zero)
                 })
                 .ToArray();
+            this.persistenceReadDetector = persistenceReadDetector;
         }
 
         public IReadOnlyCollection<int> RemovedIds { get; private set; } = Array.Empty<int>();
 
         public Task<IReadOnlyCollection<ForcedTournament>> GetQueuedAsync(CancellationToken cancellationToken)
-            => Task.FromResult(queuedTournaments);
+        {
+            return persistenceReadDetector?.RunAsync(
+                () => queuedTournaments,
+                cancellationToken)
+                ?? Task.FromResult(queuedTournaments);
+        }
 
         public Task<IReadOnlyCollection<int>> AddMissingAsync(
             IReadOnlyCollection<int> tournamentIds,
@@ -282,10 +431,13 @@ public sealed class StartPollServiceTests
             this.tournaments = tournaments;
         }
 
+        public List<DateOnly> RequestedTargetDates { get; } = new();
+
         public Task<IReadOnlyCollection<TournamentDetails>> GetTournamentsIntersectingDateAsync(
             DateOnly targetDate,
             CancellationToken cancellationToken)
         {
+            RequestedTargetDates.Add(targetDate);
             return Task.FromResult(tournaments);
         }
 
@@ -294,6 +446,31 @@ public sealed class StartPollServiceTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(tournaments);
+        }
+    }
+
+    private sealed class ConcurrentPersistenceReadDetector
+    {
+        private int activeReadCount;
+
+        public async Task<T> RunAsync<T>(Func<T> resultFactory, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref activeReadCount) != 1)
+            {
+                Interlocked.Decrement(ref activeReadCount);
+                throw new InvalidOperationException("Persistence reads must not run concurrently.");
+            }
+
+            try
+            {
+                await Task.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+                return resultFactory();
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeReadCount);
+            }
         }
     }
 
@@ -309,6 +486,7 @@ public sealed class StartPollServiceTests
         public List<PollPublicationRequest> PollRequests { get; } = new();
         public List<int> DeletedMessageIds { get; } = new();
         public bool ThrowOnPoll { get; set; }
+        public bool ThrowPollNotFoundOnStop { get; set; }
 
         public Task<int> SendHtmlMessageAsync(long chatId, string message, CancellationToken cancellationToken)
         {
@@ -321,10 +499,18 @@ public sealed class StartPollServiceTests
             PollRequests.Add(request);
             return ThrowOnPoll
                 ? Task.FromException<PublishedPoll>(new InvalidOperationException("Telegram unavailable."))
-                : Task.FromResult(new PublishedPoll("telegram-poll-id", 102));
+                : Task.FromResult(new PublishedPoll(
+                    "telegram-poll-id",
+                    102,
+                    request.Options.Select((text, index) => new PublishedPollOption($"option-{index}", text, index)).ToArray()));
         }
 
-        public Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StopPollAsync(long chatId, int pollMessageId, CancellationToken cancellationToken)
+        {
+            return ThrowPollNotFoundOnStop
+                ? Task.FromException(new PollNotFoundException(new InvalidOperationException()))
+                : Task.CompletedTask;
+        }
 
         public Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken)
         {

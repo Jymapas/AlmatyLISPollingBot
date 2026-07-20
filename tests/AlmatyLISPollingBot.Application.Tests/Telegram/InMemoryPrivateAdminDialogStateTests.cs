@@ -28,6 +28,16 @@ public sealed class InMemoryPrivateAdminDialogStateTests
     }
 
     [Fact]
+    public void Start_ShouldTrackTournamentReturnDialog()
+    {
+        var sut = new InMemoryPrivateAdminDialogState();
+
+        sut.Start(7, PrivateAdminDialogKind.UnexcludeTournaments);
+
+        sut.GetActive(7).Should().Be(PrivateAdminDialogKind.UnexcludeTournaments);
+    }
+
+    [Fact]
     public void Cancel_ShouldRemoveOnlyTheSpecifiedAdministratorState()
     {
         var sut = new InMemoryPrivateAdminDialogState();

@@ -33,6 +33,28 @@ public sealed class ListTournamentOptionsService
 
     public async Task<TournamentOptionsResult> ExecuteAsync(CancellationToken cancellationToken)
     {
+        return await ExecuteAsync(
+            onlyExcluded: false,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.PrimaryOnly,
+            cancellationToken);
+    }
+
+    public async Task<TournamentOptionsResult> ExecuteExcludedAsync(CancellationToken cancellationToken)
+    {
+        return await ExecuteAsync(
+            onlyExcluded: true,
+            TournamentIdDisplayMode.WithTournamentId,
+            TournamentPaymentCategoriesDisplayMode.PrimaryOnly,
+            cancellationToken);
+    }
+
+    private async Task<TournamentOptionsResult> ExecuteAsync(
+        bool onlyExcluded,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
+        CancellationToken cancellationToken)
+    {
         var settings = await settingsRepository.GetAsync(cancellationToken)
             ?? throw new InvalidOperationException("Bot settings are not initialized.");
 
@@ -46,8 +68,39 @@ public sealed class ListTournamentOptionsService
             await tournamentsTask,
             targetDate,
             await excludedIdsTask);
-        var formattingResult = await tournamentListFormatter.FormatAsync(candidates, cancellationToken);
 
-        return new TournamentOptionsResult(targetDate, formattingResult.Pages);
+        if (onlyExcluded)
+        {
+            candidates = candidates.Where(x => x.IsExcluded).ToArray();
+        }
+
+        var formattingResult = await tournamentListFormatter.FormatAsync(
+            candidates,
+            tournamentIdDisplayMode,
+            paymentCategoriesDisplayMode,
+            TournamentDateRangeDisplayMode.WithDateRange,
+            timeZone,
+            cancellationToken);
+
+        var pages = AddOptionsHeader(formattingResult.Pages, targetDate);
+
+        return new TournamentOptionsResult(targetDate, pages);
+    }
+
+    private static IReadOnlyList<string> AddOptionsHeader(IReadOnlyList<string> pages, DateOnly targetDate)
+    {
+        if (pages.Count == 0)
+        {
+            return pages;
+        }
+
+        var header = $"<b>Турниры на {targetDate:dd.MM.yyyy}</b>";
+        var firstPage = string.Concat(header, "\n\n", pages[0]);
+        if (firstPage.Length <= 4096)
+        {
+            return new[] { firstPage }.Concat(pages.Skip(1)).ToArray();
+        }
+
+        return new[] { header }.Concat(pages).ToArray();
     }
 }

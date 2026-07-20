@@ -30,6 +30,9 @@ public sealed class ListTournamentOptionsServiceTests
         result.Pages[0].Should().Contain("<b>Исключённый</b>");
         result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
         result.Pages[0].Should().Contain("<b>Первый</b>");
+        result.Pages[0].Should().Contain("<b>ID:</b> <code>1</code>");
+        result.Pages[0].Should().StartWith("<b>Турниры на 07.03.2026</b>");
+        result.Pages[0].Should().Contain("<b>Период:</b> 07.03 12:00 — 07.03 16:00");
     }
 
     [Fact]
@@ -38,6 +41,75 @@ public sealed class ListTournamentOptionsServiceTests
         var sut = CreateService(Array.Empty<TournamentDetails>(), Array.Empty<int>());
 
         var result = await sut.ExecuteAsync(CancellationToken.None);
+
+        result.TargetDate.Should().Be(new DateOnly(2026, 3, 7));
+        result.Pages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldShowOnlyPrimaryPaymentCategory()
+    {
+        var tournament = CreateTournament(
+            1,
+            "С ценами",
+            4m,
+            paymentCategories: new[]
+            {
+                new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                new TournamentPaymentCategory(3000m, "KZT", "студенты")
+            });
+        var sut = CreateService(new[] { tournament }, Array.Empty<int>());
+
+        var result = await sut.ExecuteAsync(CancellationToken.None);
+
+        result.Pages.Should().ContainSingle();
+        result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
+        result.Pages[0].Should().NotContain("студенты");
+        result.Pages[0].Should().NotContain("3000₸");
+    }
+
+    [Fact]
+    public async Task ExecuteExcludedAsync_ShouldListOnlyExcludedEligibleTournaments()
+    {
+        var tournaments = new[]
+        {
+            CreateTournament(1, "Обычный", 4m),
+            CreateTournament(
+                2,
+                "Исключённый",
+                5m,
+                paymentCategories: new[]
+                {
+                    new TournamentPaymentCategory(5000m, "KZT", "по умолчанию"),
+                    new TournamentPaymentCategory(3000m, "KZT", "студенты")
+                }),
+            CreateTournament(3, "Неподходящий", 6m, type: 8)
+        };
+        var sut = CreateService(tournaments, excludedTournamentIds: new[] { 2, 3 });
+
+        var result = await sut.ExecuteExcludedAsync(CancellationToken.None);
+
+        result.TargetDate.Should().Be(new DateOnly(2026, 3, 7));
+        result.Pages.Should().ContainSingle();
+        result.Pages[0].Should().Contain("<b>Исключённый</b>");
+        result.Pages[0].Should().Contain("🚫 <b>Исключён</b>");
+        result.Pages[0].Should().Contain("<b>ID:</b> <code>2</code>");
+        result.Pages[0].Should().Contain("<b>Стоимость:</b> 5000₸");
+        result.Pages[0].Should().NotContain("студенты — 3000₸");
+        result.Pages[0].Should().StartWith("<b>Турниры на 07.03.2026</b>");
+        result.Pages[0].Should().Contain("<b>Период:</b> 07.03 12:00 — 07.03 16:00");
+        result.Pages[0].Should().NotContain("Обычный");
+        result.Pages[0].Should().NotContain("Неподходящий");
+    }
+
+    [Fact]
+    public async Task ExecuteExcludedAsync_ShouldReturnNoPagesWhenNoExcludedEligibleTournamentsExist()
+    {
+        var sut = CreateService(
+            new[] { CreateTournament(1, "Обычный", 4m) },
+            excludedTournamentIds: new[] { 2 });
+
+        var result = await sut.ExecuteExcludedAsync(CancellationToken.None);
 
         result.TargetDate.Should().Be(new DateOnly(2026, 3, 7));
         result.Pages.Should().BeEmpty();
@@ -56,12 +128,17 @@ public sealed class ListTournamentOptionsServiceTests
             new TournamentListFormatter(new StubExchangeRateProvider()));
     }
 
-    private static TournamentDetails CreateTournament(int id, string title, decimal difficulty)
+    private static TournamentDetails CreateTournament(
+        int id,
+        string title,
+        decimal difficulty,
+        int type = 3,
+        IReadOnlyList<TournamentPaymentCategory>? paymentCategories = null)
     {
         return new TournamentDetails(
             id,
             title,
-            3,
+            type,
             new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.FromHours(5)),
             new DateTimeOffset(2026, 3, 7, 16, 0, 0, TimeSpan.FromHours(5)),
             difficulty,
@@ -69,7 +146,7 @@ public sealed class ListTournamentOptionsServiceTests
             new[] { "chgkgg" },
             Array.Empty<TournamentEditor>(),
             new Dictionary<int, int>(),
-            Array.Empty<TournamentPaymentCategory>());
+            paymentCategories ?? Array.Empty<TournamentPaymentCategory>());
     }
 
     private sealed class StubClock : IClock

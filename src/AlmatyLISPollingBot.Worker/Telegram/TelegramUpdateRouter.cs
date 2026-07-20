@@ -3,17 +3,25 @@ using AlmatyLISPollingBot.Application.Features.Administrators;
 using AlmatyLISPollingBot.Application.Features.ExcludedTournaments;
 using AlmatyLISPollingBot.Application.Features.ForcedTournaments;
 using AlmatyLISPollingBot.Application.Features.Polls.Options;
+using AlmatyLISPollingBot.Application.Features.Polls.Preview;
 using AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 using AlmatyLISPollingBot.Application.Features.Polls.StopPoll;
+using AlmatyLISPollingBot.Application.Features.Polls.Results;
 using AlmatyLISPollingBot.Application.Abstractions.Tournaments;
+using AlmatyLISPollingBot.Application.Abstractions.Persistence;
+using AlmatyLISPollingBot.Application.Abstractions.Clock;
 using AlmatyLISPollingBot.Application.Contracts.Tournaments;
 using AlmatyLISPollingBot.Application.Contracts.Bot;
 using AlmatyLISPollingBot.Application.Contracts.Polls;
+using AlmatyLISPollingBot.Domain.Common;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using AlmatyLISPollingBot.Worker.HostedServices;
 using Microsoft.Extensions.Options;
+using Telegram.Bot.Types.ReplyMarkups;
+using AlmatyLISPollingBot.Domain.Enums;
+using System.Net;
 
 namespace AlmatyLISPollingBot.Worker.Telegram;
 
@@ -22,13 +30,19 @@ public sealed class TelegramUpdateRouter
     private const int TelegramMessageMaxLength = 4096;
 
     private readonly StartPollService startPollService;
+    private readonly PreviewPollService previewPollService;
     private readonly ListTournamentOptionsService listTournamentOptionsService;
     private readonly StopPollService stopPollService;
     private readonly MakePostService makePostService;
     private readonly ExcludeTournamentsService excludeTournamentsService;
+    private readonly UnexcludeTournamentsService unexcludeTournamentsService;
     private readonly ForceTournamentsService forceTournamentsService;
     private readonly UpdateSettingsService updateSettingsService;
     private readonly PollCommandAuthorizer pollCommandAuthorizer;
+    private readonly PollStateUpdateService pollStateUpdateService;
+    private readonly PollResultsService pollResultsService;
+    private readonly IShadowBannedUserRepository shadowBannedUserRepository;
+    private readonly IClock clock;
     private readonly TelegramCommandMenuInitializationService commandMenuInitializationService;
     private readonly IOptions<BotConfiguration> botConfiguration;
     private readonly IPrivateAdminDialogState privateAdminDialogState;
@@ -38,13 +52,19 @@ public sealed class TelegramUpdateRouter
 
     public TelegramUpdateRouter(
         StartPollService startPollService,
+        PreviewPollService previewPollService,
         ListTournamentOptionsService listTournamentOptionsService,
         StopPollService stopPollService,
         MakePostService makePostService,
         ExcludeTournamentsService excludeTournamentsService,
+        UnexcludeTournamentsService unexcludeTournamentsService,
         ForceTournamentsService forceTournamentsService,
         UpdateSettingsService updateSettingsService,
         PollCommandAuthorizer pollCommandAuthorizer,
+        PollStateUpdateService pollStateUpdateService,
+        PollResultsService pollResultsService,
+        IShadowBannedUserRepository shadowBannedUserRepository,
+        IClock clock,
         TelegramCommandMenuInitializationService commandMenuInitializationService,
         IOptions<BotConfiguration> botConfiguration,
         IPrivateAdminDialogState privateAdminDialogState,
@@ -53,13 +73,19 @@ public sealed class TelegramUpdateRouter
         ILogger<TelegramUpdateRouter> logger)
     {
         this.startPollService = startPollService;
+        this.previewPollService = previewPollService;
         this.listTournamentOptionsService = listTournamentOptionsService;
         this.stopPollService = stopPollService;
         this.makePostService = makePostService;
         this.excludeTournamentsService = excludeTournamentsService;
+        this.unexcludeTournamentsService = unexcludeTournamentsService;
         this.forceTournamentsService = forceTournamentsService;
         this.updateSettingsService = updateSettingsService;
         this.pollCommandAuthorizer = pollCommandAuthorizer;
+        this.pollStateUpdateService = pollStateUpdateService;
+        this.pollResultsService = pollResultsService;
+        this.shadowBannedUserRepository = shadowBannedUserRepository;
+        this.clock = clock;
         this.commandMenuInitializationService = commandMenuInitializationService;
         this.botConfiguration = botConfiguration;
         this.privateAdminDialogState = privateAdminDialogState;
@@ -70,6 +96,38 @@ public sealed class TelegramUpdateRouter
 
     public async Task RouteAsync(Update update, CancellationToken cancellationToken)
     {
+        if (update.Poll is not null)
+        {
+            await pollStateUpdateService.ApplyPollSnapshotAsync(
+                new PollSnapshot(update.Poll.Id, update.Poll.Options.Select((x, index) => new PollOptionSnapshot(x.PersistentId, x.Text, index, x.VoterCount)).ToArray()),
+                cancellationToken);
+            return;
+        }
+
+        if (update.PollAnswer is not null)
+        {
+            var answer = update.PollAnswer;
+            if (answer.User is not null)
+            {
+                await pollStateUpdateService.ApplyPollAnswerAsync(
+                    new PollAnswerSnapshot(answer.PollId, PollVoterKind.User, answer.User.Id, FormatUserName(answer.User), answer.User.Username, answer.OptionPersistentIds, update.Id),
+                    cancellationToken);
+            }
+            else if (answer.VoterChat is not null)
+            {
+                await pollStateUpdateService.ApplyPollAnswerAsync(
+                    new PollAnswerSnapshot(answer.PollId, PollVoterKind.Chat, answer.VoterChat.Id, answer.VoterChat.Title ?? answer.VoterChat.Username ?? answer.VoterChat.Id.ToString(), null, answer.OptionPersistentIds, update.Id),
+                    cancellationToken);
+            }
+            return;
+        }
+
+        if (update.CallbackQuery is not null)
+        {
+            await HandleCallbackAsync(update.CallbackQuery, cancellationToken);
+            return;
+        }
+
         var message = update.Message;
         var messageText = message?.Text;
         var user = message?.From;
@@ -161,6 +219,30 @@ public sealed class TelegramUpdateRouter
             return;
         }
 
+        if (await IsBotCommandAsync(messageText, BotCommands.Unexclude, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            var payload = GetCommandPayload(messageText);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                privateAdminDialogState.Start(user.Id, PrivateAdminDialogKind.UnexcludeTournaments);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Перечислите ID или ссылки на турниры, которые нужно вернуть в пул. Для отмены отправьте /cancel.",
+                    cancellationToken);
+                return;
+            }
+
+            privateAdminDialogState.Cancel(user.Id);
+            await ProcessUnexclusionAsync(message.Chat.Id, user.Id, payload, cancellationToken);
+            return;
+        }
+
         if (await IsBotCommandAsync(messageText, BotCommands.Cancel, cancellationToken))
         {
             if (!commandContext.IsPrivateChat
@@ -184,8 +266,120 @@ public sealed class TelegramUpdateRouter
                 return;
             }
 
-            await startPollService.StartAsync(cancellationToken);
-            logger.LogInformation("Received /poll command.");
+            var requestParseResult = StartPollRequestParser.Parse(GetCommandPayload(messageText));
+            if (!requestParseResult.IsValid)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Используйте: /poll, /poll 1, /poll дд.мм.гггг или /poll дд.мм.гггг 1.",
+                    cancellationToken);
+                return;
+            }
+
+            var result = await startPollService.StartAsync(requestParseResult.Request!, cancellationToken);
+            if (result.RejectionReason == PollStartRejectionReason.TargetDateAlreadyStopped)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Нельзя создать опрос: время его автоматической остановки для этой даты уже прошло.",
+                    cancellationToken);
+                return;
+            }
+
+            logger.LogInformation(
+                "Received /poll command. Target date: {TargetDate}; desired tournament count: {DesiredTournamentCount}.",
+                requestParseResult.Request!.TargetDate,
+                requestParseResult.Request.DesiredTournamentCount);
+            return;
+        }
+
+        if (await IsBotCommandAsync(messageText, BotCommands.Preview, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            var requestParseResult = StartPollRequestParser.Parse(GetCommandPayload(messageText));
+            if (!requestParseResult.IsValid)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Используйте: /preview, /preview 1, /preview дд.мм.гггг или /preview дд.мм.гггг 1.",
+                    cancellationToken);
+                return;
+            }
+
+            PollPreviewResult result;
+            try
+            {
+                result = await previewPollService.ExecuteAsync(requestParseResult.Request!, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Could not create poll preview for Telegram user {TelegramUserId} in chat {ChatId}.",
+                    user.Id,
+                    message.Chat.Id);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Не удалось сформировать предпросмотр опроса. Попробуйте ещё раз позже.",
+                    cancellationToken);
+                return;
+            }
+
+            switch (result.RejectionReason)
+            {
+                case null:
+                    break;
+                case PollCandidatePreparationRejectionReason.TargetDateAlreadyStopped:
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        "Нельзя сформировать предпросмотр: время автоматической остановки для этой даты уже прошло.",
+                        cancellationToken);
+                    return;
+                case PollCandidatePreparationRejectionReason.TooManyForcedCandidates:
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        $"Невозможно сформировать опрос на {result.TargetDate:dd.MM.yyyy}: доступно {result.ForcedCandidateCount} принудительно добавленных синхронов, а лимит — {PollRules.MaxTournamentOptions}.",
+                        cancellationToken);
+                    return;
+                case PollCandidatePreparationRejectionReason.NoCandidates:
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        $"Не найдено подходящих синхронов для опроса на {result.TargetDate:dd.MM.yyyy}.",
+                        cancellationToken);
+                    return;
+                default:
+                    logger.LogError(
+                        "Unsupported poll preview rejection reason {RejectionReason} for Telegram user {TelegramUserId} in chat {ChatId}.",
+                        result.RejectionReason,
+                        user.Id,
+                        message.Chat.Id);
+                    await SendPrivateMessageAsync(
+                        message.Chat.Id,
+                        "Не удалось сформировать предпросмотр опроса. Попробуйте ещё раз позже.",
+                        cancellationToken);
+                    return;
+            }
+
+            await SendPrivateMessageAsync(
+                message.Chat.Id,
+                $"Предпросмотр опроса на {result.TargetDate:dd.MM.yyyy} (состояние на сейчас). В Telegram poll также будет вариант «посмотреть результаты».",
+                cancellationToken);
+            foreach (var page in result.Pages)
+            {
+                await SendHtmlPrivateMessageAsync(message.Chat.Id, page, cancellationToken);
+            }
+
+            logger.LogInformation(
+                "Created poll preview for Telegram user {TelegramUserId} in chat {ChatId}. Target date: {TargetDate}; candidate page count: {PageCount}.",
+                user.Id,
+                message.Chat.Id,
+                result.TargetDate,
+                result.Pages.Count);
             return;
         }
 
@@ -214,6 +408,67 @@ public sealed class TelegramUpdateRouter
             }
 
             logger.LogInformation("Received /options command.");
+            return;
+        }
+
+        if (await IsBotCommandAsync(messageText, BotCommands.Results, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            await SendResultsAsync(message.Chat.Id, cancellationToken);
+            return;
+        }
+
+        if (await IsBotCommandAsync(messageText, BotCommands.Excluded, cancellationToken))
+        {
+            if (!commandContext.IsPrivateChat
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(commandContext, cancellationToken))
+            {
+                return;
+            }
+
+            TournamentOptionsResult result;
+            try
+            {
+                result = await listTournamentOptionsService.ExecuteExcludedAsync(cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Could not list excluded tournaments for Telegram user {TelegramUserId} in chat {ChatId}.",
+                    user.Id,
+                    message.Chat.Id);
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    "Не удалось загрузить исключённые турниры. Попробуйте ещё раз позже.",
+                    cancellationToken);
+                return;
+            }
+
+            if (result.Pages.Count == 0)
+            {
+                await SendPrivateMessageAsync(
+                    message.Chat.Id,
+                    $"Не найдено исключённых турниров на {result.TargetDate:dd.MM.yyyy}.",
+                    cancellationToken);
+            }
+            else
+            {
+                foreach (var page in result.Pages)
+                {
+                    await SendHtmlPrivateMessageAsync(message.Chat.Id, page, cancellationToken);
+                }
+            }
+
+            logger.LogInformation(
+                "Listed {PageCount} pages of excluded tournaments for Telegram user {TelegramUserId} in chat {ChatId}.",
+                result.Pages.Count,
+                user.Id,
+                message.Chat.Id);
             return;
         }
 
@@ -253,6 +508,9 @@ public sealed class TelegramUpdateRouter
         {
             case PrivateAdminDialogKind.ExcludeTournaments:
                 await ProcessExclusionAsync(message.Chat.Id, user.Id, messageText, cancellationToken);
+                break;
+            case PrivateAdminDialogKind.UnexcludeTournaments:
+                await ProcessUnexclusionAsync(message.Chat.Id, user.Id, messageText, cancellationToken);
                 break;
             case PrivateAdminDialogKind.ForceTournaments:
                 await ProcessForcedTournamentsAsync(message.Chat.Id, user.Id, messageText, cancellationToken);
@@ -296,6 +554,44 @@ public sealed class TelegramUpdateRouter
             chatId,
             result.AddedTournamentIds.Count,
             result.AlreadyExcludedTournamentIds.Count);
+    }
+
+    private async Task ProcessUnexclusionAsync(
+        long chatId,
+        long userId,
+        string input,
+        CancellationToken cancellationToken)
+    {
+        var result = await unexcludeTournamentsService.ExecuteAsync(input, cancellationToken);
+        if (!result.IsValid)
+        {
+            var errorMessage = result.IsEmptyInput
+                ? "Укажите хотя бы один ID или ссылку на турнир."
+                : $"Не удалось распознать: {string.Join(", ", result.InvalidTokens)}. Укажите ID или ссылки на турниры.";
+            await SendPrivateMessageAsync(chatId, errorMessage, cancellationToken);
+            logger.LogInformation(
+                "Rejected tournament return input from Telegram user {TelegramUserId} in chat {ChatId}. Invalid token count: {InvalidTokenCount}.",
+                userId,
+                chatId,
+                result.InvalidTokens.Count);
+            return;
+        }
+
+        privateAdminDialogState.Cancel(userId);
+        var tournamentIds = result.ReturnedTournamentIds
+            .Concat(result.AlreadyIncludedTournamentIds)
+            .ToArray();
+        var tournaments = await GetTournamentDetailsAsync(tournamentIds, cancellationToken);
+        await SendHtmlPrivateMessageAsync(
+            chatId,
+            UnexcludeTournamentsResultFormatter.Format(result, tournaments),
+            cancellationToken);
+        logger.LogInformation(
+            "Returned tournaments to the pool for Telegram user {TelegramUserId} in chat {ChatId}. Returned: {ReturnedCount}; already included: {AlreadyIncludedCount}.",
+            userId,
+            chatId,
+            result.ReturnedTournamentIds.Count,
+            result.AlreadyIncludedTournamentIds.Count);
     }
 
     private async Task ProcessForcedTournamentsAsync(
@@ -355,6 +651,182 @@ public sealed class TelegramUpdateRouter
         return botClient.SendMessage(chatId, TruncateTelegramMessage(text), cancellationToken: cancellationToken);
     }
 
+    private async Task SendResultsAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var summary = await pollResultsService.GetActiveAsync(cancellationToken);
+        if (summary is null)
+        {
+            await SendPrivateMessageAsync(chatId, "Нет активного опроса.", cancellationToken);
+            return;
+        }
+
+        if (summary.Options.Count == 0)
+        {
+            await SendPrivateMessageAsync(chatId, "Для активного опроса пока нет сохранённых вариантов. Дождитесь следующего обновления Telegram.", cancellationToken);
+            return;
+        }
+
+        var timeZone = TimeZoneInfo.FindSystemTimeZoneById(botConfiguration.Value.ApplicationTimeZone);
+        var pages = SplitTelegramMessage(PollResultsService.FormatSummary(summary, timeZone));
+        var keyboard = new InlineKeyboardMarkup(summary.Options
+            .Select(x => new[] { InlineKeyboardButton.WithCallbackData(x.Text.Length > 60 ? string.Concat(x.Text.AsSpan(0, 59), "…") : x.Text, $"r|{PollResultsCallbackCodec.EncodeOption(summary.PollSessionId, x.OptionId)}") }));
+        for (var index = 0; index < pages.Count; index++)
+        {
+            await botClient.SendMessage(chatId, pages[index], parseMode: ParseMode.Html, replyMarkup: index == pages.Count - 1 ? keyboard : null, cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleCallbackAsync(CallbackQuery callback, CancellationToken cancellationToken)
+    {
+        var acknowledged = false;
+        async Task AcknowledgeAsync()
+        {
+            if (acknowledged)
+            {
+                return;
+            }
+
+            acknowledged = true;
+            await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+        }
+
+        try
+        {
+            var message = callback.Message;
+            if (message is null || message.Chat.Type != ChatType.Private || callback.From is null
+                || !await pollCommandAuthorizer.IsAuthorizedAsync(new PollCommandContext(message.Chat.Id, callback.From.Id, true), cancellationToken))
+            {
+                await AcknowledgeAsync();
+                return;
+            }
+
+            var tokens = (callback.Data ?? string.Empty).Split('|');
+            if (tokens.Length == 3 && tokens[0] == "r" && PollResultsCallbackCodec.TryDecodeOption(string.Join('|', tokens[1..]), out var sessionId, out var optionId))
+            {
+                await AcknowledgeAsync();
+                await SendVotersAsync(message.Chat.Id, sessionId, optionId, cancellationToken);
+                return;
+            }
+
+            if (tokens.Length == 5 && tokens[0] == "b" && PollResultsCallbackCodec.TryDecode(string.Join('|', tokens[1..]), out var banSessionId, out var banOptionId, out var voterId, out var excluding))
+            {
+                await AcknowledgeAsync();
+                var voters = await pollResultsService.GetVotersAsync(banSessionId, banOptionId, cancellationToken);
+                var voter = voters?.SingleOrDefault(x => x.VoterKind == PollVoterKind.User && x.TelegramPeerId == voterId);
+                if (voter is null)
+                {
+                    return;
+                }
+
+                var keyboard = new InlineKeyboardMarkup(new[]
+                {
+                    new[] { InlineKeyboardButton.WithCallbackData("Подтвердить", $"c|{PollResultsCallbackCodec.Encode(banSessionId, banOptionId, voterId, excluding)}") },
+                    new[] { InlineKeyboardButton.WithCallbackData("Отмена", "n|0|0|0|0") }
+                });
+                await botClient.SendMessage(
+                    message.Chat.Id,
+                    excluding ? $"Исключить пользователя {FormatSafeVoterName(voter.DisplayName)} из учёта результатов?" : $"Вернуть пользователя {FormatSafeVoterName(voter.DisplayName)} в учёт результатов?",
+                    replyMarkup: keyboard,
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            if (tokens.Length == 5 && tokens[0] == "c" && PollResultsCallbackCodec.TryDecode(string.Join('|', tokens[1..]), out var confirmSessionId, out var confirmOptionId, out var targetUserId, out var confirmExcluding))
+            {
+                await AcknowledgeAsync();
+                var voters = await pollResultsService.GetVotersAsync(confirmSessionId, confirmOptionId, cancellationToken);
+                if (voters is null || !voters.Any(x => x.VoterKind == PollVoterKind.User && x.TelegramPeerId == targetUserId))
+                {
+                    return;
+                }
+
+                if (confirmExcluding)
+                {
+                    await shadowBannedUserRepository.SetExcludedAsync(targetUserId, callback.From.Id, clock.UtcNow, cancellationToken);
+                }
+                else
+                {
+                    await shadowBannedUserRepository.SetIncludedAsync(targetUserId, callback.From.Id, clock.UtcNow, cancellationToken);
+                }
+
+                await SendPrivateMessageAsync(message.Chat.Id, "Учёт голосов обновлён.", cancellationToken);
+                return;
+            }
+
+            await AcknowledgeAsync();
+        }
+        finally
+        {
+            await AcknowledgeAsync();
+        }
+    }
+
+    private async Task SendVotersAsync(long chatId, Guid sessionId, Guid optionId, CancellationToken cancellationToken)
+    {
+        var voters = await pollResultsService.GetVotersAsync(sessionId, optionId, cancellationToken);
+        if (voters is null)
+        {
+            return;
+        }
+
+        var lines = new List<string> { "<b>Голосовавшие</b>" };
+        var buttons = new List<IEnumerable<InlineKeyboardButton>>();
+        foreach (var voter in voters)
+        {
+            var name = WebUtility.HtmlEncode(voter.DisplayName);
+            var identity = voter.VoterKind == PollVoterKind.User ? $"<a href=\"tg://user?id={voter.TelegramPeerId}\">{name}</a>" : name;
+            var username = string.IsNullOrWhiteSpace(voter.Username) ? string.Empty : $" @{WebUtility.HtmlEncode(voter.Username)}";
+            lines.Add($"{identity}{username}{(voter.IsExcluded ? " 🚫 не учитывается" : string.Empty)}");
+            if (voter.VoterKind == PollVoterKind.User)
+            {
+                buttons.Add(new[] { InlineKeyboardButton.WithCallbackData(FormatVoterAction(voter), $"b|{PollResultsCallbackCodec.Encode(sessionId, optionId, voter.TelegramPeerId, !voter.IsExcluded)}") });
+            }
+        }
+
+        foreach (var page in SplitTelegramMessage(string.Join('\n', lines)))
+        {
+            await botClient.SendMessage(chatId, page, parseMode: ParseMode.Html, cancellationToken: cancellationToken);
+        }
+        if (buttons.Count > 0)
+        {
+            await botClient.SendMessage(chatId, "Действия:", replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: cancellationToken);
+        }
+    }
+
+    private static IReadOnlyList<string> SplitTelegramMessage(string message)
+    {
+        var pages = new List<string>();
+        var current = new System.Text.StringBuilder();
+        foreach (var line in message.Split('\n'))
+        {
+            if (current.Length > 0 && current.Length + line.Length + 1 > TelegramMessageMaxLength)
+            {
+                pages.Add(current.ToString());
+                current.Clear();
+            }
+            if (line.Length > TelegramMessageMaxLength)
+            {
+                pages.Add(line[..TelegramMessageMaxLength]);
+                continue;
+            }
+            if (current.Length > 0) current.Append('\n');
+            current.Append(line);
+        }
+        if (current.Length > 0) pages.Add(current.ToString());
+        return pages;
+    }
+
+    private static string FormatUserName(User user) => string.Join(' ', new[] { user.FirstName, user.LastName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static string FormatVoterAction(PollResultsVoter voter) =>
+        $"{(voter.IsExcluded ? "Вернуть" : "Исключить")}: {FormatSafeVoterName(voter.DisplayName, 42)}";
+
+    private static string FormatSafeVoterName(string displayName, int maxLength = 96)
+    {
+        var normalized = string.Concat(displayName.Where(x => !char.IsControl(x))).Trim();
+        return normalized.Length <= maxLength ? normalized : string.Concat(normalized.AsSpan(0, maxLength - 1), "…");
+    }
+
     private Task SendHtmlPrivateMessageAsync(long chatId, string html, CancellationToken cancellationToken)
     {
         return botClient.SendMessage(chatId, html, parseMode: ParseMode.Html, cancellationToken: cancellationToken);
@@ -379,7 +851,7 @@ public sealed class TelegramUpdateRouter
         {
             logger.LogWarning(
                 exception,
-                "Could not load tournament titles for {TournamentCount} excluded tournaments.",
+                "Could not load tournament titles for {TournamentCount} tournaments.",
                 tournamentIds.Count);
             return Array.Empty<TournamentDetails>();
         }

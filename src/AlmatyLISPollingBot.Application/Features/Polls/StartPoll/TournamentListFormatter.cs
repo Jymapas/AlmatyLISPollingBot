@@ -10,6 +10,9 @@ namespace AlmatyLISPollingBot.Application.Features.Polls.StartPoll;
 public sealed class TournamentListFormatter
 {
     private const int TelegramMessageLengthLimit = 4096;
+    private const int TelegramFormattingEntityLimit = 100;
+    private const int TelegramFormattingEntitySafetyMargin = 10;
+    private const int TelegramFormattingEntityPageLimit = TelegramFormattingEntityLimit - TelegramFormattingEntitySafetyMargin;
     private static readonly string[] NumberEmoji = { "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣" };
     private static readonly string[] CurrencyPriority = { "KZT", "RUB", "USD" };
 
@@ -22,9 +25,50 @@ public sealed class TournamentListFormatter
 
     public async Task<TournamentListFormattingResult> FormatAsync(
         IReadOnlyList<PollTournamentCandidate> candidates,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
+        CancellationToken cancellationToken)
+    {
+        return await FormatAsync(
+            candidates,
+            tournamentIdDisplayMode,
+            paymentCategoriesDisplayMode,
+            TournamentDateRangeDisplayMode.WithoutDateRange,
+            timeZone: null,
+            cancellationToken);
+    }
+
+    public async Task<TournamentListFormattingResult> FormatAsync(
+        IReadOnlyList<PollTournamentCandidate> candidates,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
+        TournamentDateRangeDisplayMode dateRangeDisplayMode,
+        TimeZoneInfo? timeZone,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(candidates);
+        if (tournamentIdDisplayMode is not (TournamentIdDisplayMode.WithTournamentId or TournamentIdDisplayMode.WithoutTournamentId))
+        {
+            throw new ArgumentOutOfRangeException(nameof(tournamentIdDisplayMode), tournamentIdDisplayMode, "Unsupported tournament ID display mode.");
+        }
+
+        if (paymentCategoriesDisplayMode is not (TournamentPaymentCategoriesDisplayMode.All or TournamentPaymentCategoriesDisplayMode.PrimaryOnly))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(paymentCategoriesDisplayMode),
+                paymentCategoriesDisplayMode,
+                "Unsupported tournament payment categories display mode.");
+        }
+
+        if (dateRangeDisplayMode is not (TournamentDateRangeDisplayMode.WithoutDateRange or TournamentDateRangeDisplayMode.WithDateRange))
+        {
+            throw new ArgumentOutOfRangeException(nameof(dateRangeDisplayMode), dateRangeDisplayMode, "Unsupported tournament date range display mode.");
+        }
+
+        if (dateRangeDisplayMode == TournamentDateRangeDisplayMode.WithDateRange && timeZone is null)
+        {
+            throw new ArgumentNullException(nameof(timeZone));
+        }
 
         var selectedCurrencies = candidates
             .Select(x => SelectPaymentCategories(x.Tournament))
@@ -50,6 +94,10 @@ public sealed class TournamentListFormatter
                 index,
                 SelectPaymentCategories(candidate.Tournament),
                 rates,
+                tournamentIdDisplayMode,
+                paymentCategoriesDisplayMode,
+                dateRangeDisplayMode,
+                timeZone,
                 ref hasUnconvertedPrices));
         }
 
@@ -61,6 +109,10 @@ public sealed class TournamentListFormatter
         int index,
         IReadOnlyList<TournamentPaymentCategory> paymentCategories,
         IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
+        TournamentIdDisplayMode tournamentIdDisplayMode,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
+        TournamentDateRangeDisplayMode dateRangeDisplayMode,
+        TimeZoneInfo? timeZone,
         ref bool hasUnconvertedPrices)
     {
         var tournament = candidate.Tournament;
@@ -71,9 +123,12 @@ public sealed class TournamentListFormatter
         builder.Append("\"><b>");
         builder.Append(Escape(TournamentTitleNormalizer.Normalize(tournament.Title)));
         builder.Append("</b></a>\n");
-        builder.Append("<b>ID:</b> <code>");
-        builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
-        builder.Append("</code>\n");
+        if (tournamentIdDisplayMode == TournamentIdDisplayMode.WithTournamentId)
+        {
+            builder.Append("<b>ID:</b> <code>");
+            builder.Append(tournament.Id.ToString(CultureInfo.InvariantCulture));
+            builder.Append("</code>\n");
+        }
         builder.Append("<b>Редакторы:</b> ");
         builder.Append(Escape(FormatEditors(tournament.Editors)));
         builder.Append("\n<b>Вопросы:</b> ");
@@ -81,10 +136,20 @@ public sealed class TournamentListFormatter
         builder.Append("   <b>Сложность:</b> ");
         builder.Append(tournament.DifficultyForecast?.ToString("0.##", CultureInfo.InvariantCulture) ?? "не указана");
 
+        if (dateRangeDisplayMode == TournamentDateRangeDisplayMode.WithDateRange)
+        {
+            builder.Append("\n<b>Период:</b> ");
+            builder.Append(FormatDateRange(tournament.DateStart, tournament.DateEnd, timeZone!));
+        }
+
         if (paymentCategories.Count > 0)
         {
             builder.Append('\n');
-            builder.Append(FormatPaymentCategories(paymentCategories, rates, ref hasUnconvertedPrices));
+            builder.Append(FormatPaymentCategories(
+                paymentCategories,
+                paymentCategoriesDisplayMode,
+                rates,
+                ref hasUnconvertedPrices));
         }
 
         if (candidate.IsAvailableAtFirstSlot && !candidate.IsAvailableAtSecondSlot)
@@ -102,6 +167,17 @@ public sealed class TournamentListFormatter
         }
 
         return builder.ToString();
+    }
+
+    private static string FormatDateRange(DateTimeOffset dateStart, DateTimeOffset dateEnd, TimeZoneInfo timeZone)
+    {
+        var start = TimeZoneInfo.ConvertTime(dateStart, timeZone);
+        var end = TimeZoneInfo.ConvertTime(dateEnd, timeZone);
+
+        return string.Concat(
+            start.ToString("dd.MM HH:mm", CultureInfo.InvariantCulture),
+            " — ",
+            end.ToString("dd.MM HH:mm", CultureInfo.InvariantCulture));
     }
 
     private static string GetCandidateNumber(int index)
@@ -132,13 +208,17 @@ public sealed class TournamentListFormatter
 
     private static string FormatPaymentCategories(
         IReadOnlyList<TournamentPaymentCategory> paymentCategories,
+        TournamentPaymentCategoriesDisplayMode paymentCategoriesDisplayMode,
         IReadOnlyDictionary<string, ExchangeRateQuote?> rates,
         ref bool hasUnconvertedPrices)
     {
+        var categoriesToDisplay = paymentCategoriesDisplayMode == TournamentPaymentCategoriesDisplayMode.PrimaryOnly
+            ? paymentCategories.Take(1).ToArray()
+            : paymentCategories;
         var builder = new StringBuilder();
-        for (var index = 0; index < paymentCategories.Count; index++)
+        for (var index = 0; index < categoriesToDisplay.Count; index++)
         {
-            var category = paymentCategories[index];
+            var category = categoriesToDisplay[index];
             var price = FormatPrice(category, rates, ref hasUnconvertedPrices);
             var label = FormatCategoryLabel(category, index == 0);
 
@@ -158,7 +238,7 @@ public sealed class TournamentListFormatter
             }
 
             builder.Append(price);
-            if (index < paymentCategories.Count - 1)
+            if (index < categoriesToDisplay.Count - 1)
             {
                 builder.Append('\n');
             }
@@ -220,14 +300,19 @@ public sealed class TournamentListFormatter
     {
         var pages = new List<string>();
         var currentPage = new StringBuilder();
+        var currentPageEntityCount = 0;
 
         foreach (var entry in entries)
         {
             var separatorLength = currentPage.Length == 0 ? 0 : 2;
-            if (currentPage.Length > 0 && currentPage.Length + separatorLength + entry.Length > TelegramMessageLengthLimit)
+            var entryEntityCount = GetFormattingEntityCount(entry);
+            if (currentPage.Length > 0
+                && (currentPage.Length + separatorLength + entry.Length > TelegramMessageLengthLimit
+                    || currentPageEntityCount + entryEntityCount > TelegramFormattingEntityPageLimit))
             {
                 pages.Add(currentPage.ToString());
                 currentPage.Clear();
+                currentPageEntityCount = 0;
             }
 
             if (entry.Length > TelegramMessageLengthLimit)
@@ -238,6 +323,7 @@ public sealed class TournamentListFormatter
                     {
                         pages.Add(currentPage.ToString());
                         currentPage.Clear();
+                        currentPageEntityCount = 0;
                     }
 
                     pages.Add(part);
@@ -252,6 +338,7 @@ public sealed class TournamentListFormatter
             }
 
             currentPage.Append(entry);
+            currentPageEntityCount += entryEntityCount;
         }
 
         if (currentPage.Length > 0)
@@ -260,6 +347,26 @@ public sealed class TournamentListFormatter
         }
 
         return pages;
+    }
+
+    private static int GetFormattingEntityCount(string entry)
+    {
+        return CountOccurrences(entry, "<a ")
+            + CountOccurrences(entry, "<b>")
+            + CountOccurrences(entry, "<code>");
+    }
+
+    private static int CountOccurrences(string value, string token)
+    {
+        var count = 0;
+        var startIndex = 0;
+        while ((startIndex = value.IndexOf(token, startIndex, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            startIndex += token.Length;
+        }
+
+        return count;
     }
 
     private static IEnumerable<string> SplitLongEntry(string entry)
